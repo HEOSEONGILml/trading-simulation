@@ -1,0 +1,403 @@
+/* 모바일 화면 (useIsMobile: 폭 820px 이하) */
+
+.app.mobile {
+  height: auto;
+  min-height: 100%;
+}
+/* iOS는 16px 미만 입력창에 초점이 가면 화면을 확대한다 */
+.app.mobile input,
+.app.mobile select,
+.app.mobile .field input {
+  font-size: 16px;
+}
+
+/* ---------- 헤더 ---------- */
+
+.m-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  padding-top: calc(8px + env(safe-area-inset-top));
+  background: var(--panel);
+  border-bottom: 1px solid var(--bg);
+}
+.m-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.m-symbol {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.m-price {
+  font-size: 18px;
+  font-weight: 600;
+}
+.m-return {
+  font-weight: 600;
+}
+.m-link,
+.m-back {
+  padding: 6px 4px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.m-back {
+  color: var(--text);
+}
+.m-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.m-clock {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.app.mobile .m-speed {
+  padding: 4px 6px;
+  font-size: 14px;
+}
+.m-btn {
+  min-height: 32px;
+  padding: 6px 10px;
+}
+
+/* ---------- 차트 ---------- */
+
+.m-trade {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: calc(72px + env(safe-area-inset-bottom));
+}
+.chart-panel.mobile {
+  height: 58vh;
+  min-height: 320px;
+}
+.chart-panel.mobile .chart-toolbar {
+  padding: 0 4px;
+}
+.chart-panel.mobile .tf-scroll {
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.chart-panel.mobile .tf-scroll::-webkit-scrollbar {
+  display: none;
+}
+.chart-panel.mobile .tf-btn {
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+.chart-panel.mobile .toolbar-sep {
+  margin: 0 4px;
+}
+.chart-panel.mobile .dropdown-menu {
+  left: auto;
+  right: 0;
+}
+.chart-panel.mobile .dropdown-item {
+  padding: 8px 12px;
+}
+.chart-panel.mobile .chart-body {
+  flex-direction: column;
+}
+.drawing-bar.horizontal {
+  flex-direction: row;
+  flex-shrink: 0;
+  width: 100%;
+  padding: 4px 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-right: none;
+  border-bottom: 1px solid var(--border);
+}
+.drawing-bar.horizontal .tool-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+}
+.drawing-bar.horizontal .tool-sep {
+  flex-shrink: 0;
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+}
+
+/* ---------- 포지션/주문 목록 ---------- */
+
+.m-lists {
+  min-height: 220px;
+  padding-bottom: 8px;
+  background: var(--panel);
+}
+.m-tabs {
+  display: flex;
+  gap: 18px;
+  padding: 0 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+}
+.m-tabs::-webkit-scrollbar {
+  display: none;
+}
+.m-tabs button {
+  padding: 12px 0 10px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+.m-tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--yellow);
+}
+.m-list-head {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px 0;
+}
+.m-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 12px 0;
+  padding: 12px;
+  background: var(--panel-2);
+  border-radius: 8px;
+}
+.history-page .m-card {
+  margin: 0 0 8px;
+}
+.m-card .account {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.m-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.m-badge {
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+.m-pnl {
+  display: flex;
+  justify-content: space-between;
+}
+.m-pnl > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.m-pnl b {
+  font-size: 20px;
+}
+.m-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 8px;
+}
+.m-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.m-cell > span {
+  color: var(--text-2);
+  font-size: 11px;
+}
+.m-cell b {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.m-actions {
+  display: flex;
+  gap: 6px;
+}
+.m-actions .btn {
+  flex: 1;
+  padding: 8px 4px;
+}
+.mini-input.grow {
+  flex: 2;
+  width: auto;
+  min-width: 0;
+  padding: 6px 8px;
+}
+.m-row-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #22262d;
+}
+.right {
+  text-align: right;
+}
+
+/* ---------- 하단 주문 버튼과 주문 창 ---------- */
+
+.m-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.6);
+}
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 88dvh;
+  overflow-y: auto;
+  padding: 6px 16px calc(16px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-radius: 16px 16px 0 0;
+  animation: sheet-up 0.18s ease-out;
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(40px);
+    opacity: 0.6;
+  }
+}
+.sheet-handle {
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 10px;
+  border-radius: 2px;
+  background: var(--input);
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.segmented {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 2px;
+  background: var(--input);
+  border-radius: 6px;
+}
+.segmented button {
+  padding: 8px 0;
+  border-radius: 4px;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.segmented button.active.buy {
+  background: var(--up);
+  color: #fff;
+}
+.segmented button.active.sell {
+  background: var(--down);
+  color: #fff;
+}
+
+/* ---------- 설정/결과 창: 아래에서 올라오는 시트 ---------- */
+
+.app.mobile .modal-backdrop {
+  align-items: end;
+}
+.app.mobile .modal,
+.app.mobile .modal-sm {
+  width: 100%;
+  max-width: 100%;
+  max-height: 92dvh;
+  padding-bottom: env(safe-area-inset-bottom);
+  border-radius: 16px 16px 0 0;
+}
+.app.mobile .result-return {
+  font-size: 30px;
+}
+.app.mobile .stat-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.app.mobile .stat-grid.wide {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.app.mobile .stat-card {
+  padding: 10px;
+}
+.app.mobile .stat-card b {
+  font-size: 14px;
+}
+.app.mobile .reveal .kv {
+  flex-direction: column;
+  gap: 2px;
+}
+.app.mobile .result-trades {
+  overflow-x: auto;
+}
+.app.mobile .result-actions {
+  flex-wrap: wrap;
+}
+.app.mobile .result-actions .btn {
+  flex: 1 1 auto;
+  padding: 10px;
+}
+.app.mobile .date-range input {
+  min-width: 0;
+}
+.app.mobile .history-page {
+  padding: 8px 12px 24px;
+}
+.app.mobile .result-trades .table th,
+.app.mobile .result-trades .table td {
+  padding: 6px;
+  font-size: 11px;
+}
+.history-page .m-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+/* 헤더 가격을 가리지 않도록 하단 주문 버튼 위에 표시 */
+.app.mobile .toasts {
+  top: auto;
+  bottom: calc(80px + env(safe-area-inset-bottom));
+  width: calc(100vw - 32px);
+  align-items: center;
+}
+.m-menu {
+  min-width: 180px;
+}
+.m-menu .dropdown-item {
+  padding: 10px 14px;
+  font-size: 14px;
+}

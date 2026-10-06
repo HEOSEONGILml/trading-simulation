@@ -1,0 +1,22 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - app-data:/data
+    # 서버 PC에서 직접 접속할 때만 사용 (외부 공개는 아래 터널로)
+    ports:
+      - "127.0.0.1:3001:3001"
+
+  # Cloudflare Quick Tunnel: 컨테이너가 시작될 때마다 https://<임의 이름>.trycloudflare.com 주소를 새로 발급
+  # 주소 확인: docker compose logs tunnel | grep trycloudflare.com
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://app:3001
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  app-data:

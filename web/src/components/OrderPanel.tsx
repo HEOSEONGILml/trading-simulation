@@ -1,0 +1,297 @@
+import { useState } from 'react';
+import { MAX_LEVERAGE, maxNotionalFor } from '../engine/brackets.ts';
+import { INITIAL_BALANCE, MAKER_FEE, TAKER_FEE } from '../engine/exchange.ts';
+import type { OrderSide } from '../engine/types.ts';
+import type { Game } from '../game/game.ts';
+import { formatNumber, formatSigned, pnlClass } from '../format.ts';
+
+const LEVERAGE_MARKS = [1, 25, 50, 75, 100, 125];
+const PCT_MARKS = [0, 25, 50, 75, 100];
+
+export const parseNumber = (value: string) => {
+  const n = Number(value.replace(/,/g, ''));
+  return value.trim() !== '' && Number.isFinite(n) ? n : null;
+};
+
+export function LeverageDialog({ game, onClose }: { game: Game; onClose: () => void }) {
+  const [value, setValue] = useState(game.exchange?.leverage ?? 20);
+  const apply = () => {
+    if (game.setLeverage(value)) onClose();
+  };
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <div className="modal modal-sm" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>레버리지 조정</span>
+          <button className="icon-btn" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="leverage-input">
+            <button className="step-btn" onClick={() => setValue((v) => Math.max(1, v - 1))}>
+              −
+            </button>
+            <input
+              className="mono"
+              inputMode="numeric"
+              value={`${value}x`}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10);
+                if (Number.isFinite(n)) setValue(Math.min(MAX_LEVERAGE, Math.max(1, n)));
+              }}
+            />
+            <button className="step-btn" onClick={() => setValue((v) => Math.min(MAX_LEVERAGE, v + 1))}>
+              +
+            </button>
+          </div>
+          <input
+            type="range"
+            className="slider"
+            min={1}
+            max={MAX_LEVERAGE}
+            value={value}
+            onChange={(e) => setValue(Number(e.target.value))}
+          />
+          <div className="slider-marks">
+            {LEVERAGE_MARKS.map((m) => (
+              <button key={m} onClick={() => setValue(m)}>
+                {m}x
+              </button>
+            ))}
+          </div>
+          <p className="hint">
+            현재 레버리지에서 최대 포지션 규모: <b className="mono">{formatNumber(maxNotionalFor(value), 0)} USDT</b>
+          </p>
+          {value >= 50 && <p className="hint warn">레버리지가 높을수록 강제 청산 위험이 커집니다.</p>}
+          <button className="btn btn-primary btn-block" onClick={apply}>
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface OrderFormProps {
+  game: Game;
+  /** 지정하면 해당 방향 버튼 하나만 보여준다 (모바일 주문 창) */
+  side?: OrderSide;
+  onSubmitted?: () => void;
+}
+
+export function OrderForm({ game, side, onSubmitted }: OrderFormProps) {
+  const ex = game.exchange!;
+  const precision = game.round?.pricePrecision ?? 1;
+  const [tab, setTab] = useState<'limit' | 'market'>('limit');
+  const [price, setPrice] = useState('');
+  const [size, setSize] = useState('');
+  const [pct, setPct] = useState(0);
+  const [tpsl, setTpsl] = useState(false);
+  const [tp, setTp] = useState('');
+  const [sl, setSl] = useState('');
+  const [reduceOnly, setReduceOnly] = useState(false);
+  const [leverageOpen, setLeverageOpen] = useState(false);
+
+  const lastPrice = ex.lastPrice;
+  const refPrice = tab === 'limit' ? (parseNumber(price) ?? lastPrice) : lastPrice;
+  const maxBuy = ex.maxOpenNotional('buy', refPrice);
+  const maxSell = ex.maxOpenNotional('sell', refPrice);
+  const sizeValue = parseNumber(size) ?? 0;
+  const feeRate = tab === 'limit' ? MAKER_FEE : TAKER_FEE;
+  const cost = reduceOnly ? 0 : sizeValue / ex.leverage + sizeValue * feeRate;
+  const tradable = game.phase === 'running' || game.phase === 'paused';
+
+  const onPct = (value: number) => {
+    setPct(value);
+    const base = side === 'buy' ? maxBuy : side === 'sell' ? maxSell : Math.max(maxBuy, maxSell);
+    setSize(value > 0 ? (Math.floor(((base * value) / 100) * 100) / 100).toFixed(2) : '');
+  };
+
+  const submit = (orderSide: OrderSide) => {
+    if (!(sizeValue > 0)) return game.toast('error', '주문 규모(USDT)를 입력해주세요.');
+    const options = {
+      reduceOnly,
+      takeProfit: tpsl && !reduceOnly ? parseNumber(tp) : null,
+      stopLoss: tpsl && !reduceOnly ? parseNumber(sl) : null,
+    };
+    let result;
+    if (tab === 'market') {
+      result = game.marketOrder(orderSide, sizeValue / lastPrice, options);
+    } else {
+      const limitPrice = parseNumber(price);
+      if (limitPrice === null || limitPrice <= 0) return game.toast('error', '지정가를 입력해주세요.');
+      result = game.limitOrder(orderSide, limitPrice, sizeValue / limitPrice, options);
+    }
+    if (result) onSubmitted?.();
+  };
+
+  const sides: OrderSide[] = side ? [side] : ['buy', 'sell'];
+
+  return (
+    <div className="order-form">
+      <div className="margin-row">
+        <button className="pill" disabled title="격리 증거금만 지원">
+          격리
+        </button>
+        <button className="pill" onClick={() => setLeverageOpen(true)}>
+          {ex.leverage}x
+        </button>
+        <button className="pill" disabled title="단방향 포지션만 지원">
+          단방향
+        </button>
+      </div>
+
+      <div className="order-tabs">
+        <button className={tab === 'limit' ? 'active' : ''} onClick={() => setTab('limit')}>
+          지정가
+        </button>
+        <button className={tab === 'market' ? 'active' : ''} onClick={() => setTab('market')}>
+          시장가
+        </button>
+      </div>
+
+      <div className="avbl">
+        <span>가용</span>
+        <span className="mono">{formatNumber(ex.balance)} USDT</span>
+      </div>
+
+      {tab === 'limit' ? (
+        <div className="field">
+          <span className="field-label">가격</span>
+          <input
+            className="mono"
+            inputMode="decimal"
+            value={price}
+            placeholder={formatNumber(lastPrice, precision).replace(/,/g, '')}
+            onChange={(e) => setPrice(e.target.value)}
+          />
+          <button className="field-suffix-btn" onClick={() => setPrice(lastPrice.toFixed(precision))} title="현재가 입력">
+            최근
+          </button>
+          <span className="field-unit">USDT</span>
+        </div>
+      ) : (
+        <div className="field disabled">
+          <span className="field-label">가격</span>
+          <input value="시장가" disabled />
+        </div>
+      )}
+
+      <div className="field">
+        <span className="field-label">규모</span>
+        <input
+          className="mono"
+          inputMode="decimal"
+          value={size}
+          placeholder="0.00"
+          onChange={(e) => {
+            setSize(e.target.value);
+            setPct(0);
+          }}
+        />
+        <span className="field-unit">USDT</span>
+      </div>
+      <div className="qty-hint mono">≈ {formatNumber(sizeValue / refPrice, 4)} BTC</div>
+
+      <input type="range" className="slider" min={0} max={100} value={pct} onChange={(e) => onPct(Number(e.target.value))} />
+      <div className="slider-marks">
+        {PCT_MARKS.map((m) => (
+          <button key={m} onClick={() => onPct(m)}>
+            {m}%
+          </button>
+        ))}
+      </div>
+
+      <label className="check">
+        <input type="checkbox" checked={tpsl} disabled={reduceOnly} onChange={(e) => setTpsl(e.target.checked)} />
+        익절/손절
+      </label>
+      {tpsl && !reduceOnly && (
+        <>
+          <div className="field">
+            <span className="field-label">익절가</span>
+            <input className="mono" inputMode="decimal" value={tp} onChange={(e) => setTp(e.target.value)} placeholder="선택" />
+            <span className="field-unit">USDT</span>
+          </div>
+          <div className="field">
+            <span className="field-label">손절가</span>
+            <input className="mono" inputMode="decimal" value={sl} onChange={(e) => setSl(e.target.value)} placeholder="선택" />
+            <span className="field-unit">USDT</span>
+          </div>
+        </>
+      )}
+      <label className="check">
+        <input type="checkbox" checked={reduceOnly} onChange={(e) => setReduceOnly(e.target.checked)} />
+        감소 전용 (Reduce-Only)
+      </label>
+
+      <div className={`order-buttons ${side ? 'single' : ''}`}>
+        {sides.map((s) => (
+          <button key={s} className={s === 'buy' ? 'btn-buy' : 'btn-sell'} disabled={!tradable} onClick={() => submit(s)}>
+            {s === 'buy' ? '매수/롱' : '매도/숏'}
+          </button>
+        ))}
+      </div>
+      <div className={`order-info ${side ? 'single' : ''}`}>
+        {sides.map((s) => (
+          <div key={`cost-${s}`}>
+            <span>비용</span>
+            <span className="mono">{formatNumber(cost)} USDT</span>
+          </div>
+        ))}
+        {sides.map((s) => (
+          <div key={`max-${s}`}>
+            <span>최대</span>
+            <span className="mono">{formatNumber(s === 'buy' ? maxBuy : maxSell)} USDT</span>
+          </div>
+        ))}
+      </div>
+      {!tradable && game.phase === 'ready' && <p className="hint center">▶ 시작을 누르면 주문할 수 있습니다.</p>}
+
+      {leverageOpen && <LeverageDialog game={game} onClose={() => setLeverageOpen(false)} />}
+    </div>
+  );
+}
+
+export function AccountSummary({ game }: { game: Game }) {
+  const ex = game.exchange!;
+  const equity = ex.equity();
+  const unrealized = ex.unrealizedPnl();
+  const roundReturn = (equity / INITIAL_BALANCE - 1) * 100;
+  return (
+    <div className="account">
+      <div className="account-title">계정</div>
+      <div className="account-row">
+        <span>마진 잔고</span>
+        <span className="mono">{formatNumber(equity)} USDT</span>
+      </div>
+      <div className="account-row">
+        <span>지갑 잔고</span>
+        <span className="mono">{formatNumber(ex.walletBalance())} USDT</span>
+      </div>
+      <div className="account-row">
+        <span>미실현 손익</span>
+        <span className={`mono ${pnlClass(unrealized)}`}>{formatSigned(unrealized)} USDT</span>
+      </div>
+      <div className="account-row">
+        <span>라운드 수익률</span>
+        <span className={`mono ${pnlClass(roundReturn)}`}>{formatSigned(roundReturn)}%</span>
+      </div>
+      <div className="account-row muted">
+        <span>수수료</span>
+        <span className="mono">메이커 0.02% / 테이커 0.05%</span>
+      </div>
+    </div>
+  );
+}
+
+export function OrderPanel({ game }: { game: Game }) {
+  if (!game.exchange) return <aside className="order-panel" />;
+  return (
+    <aside className="order-panel">
+      <OrderForm game={game} />
+      <AccountSummary game={game} />
+    </aside>
+  );
+}
