@@ -30,6 +30,22 @@ export interface OrderOptions {
 const sideOf = (orderSide: OrderSide): PositionSide => (orderSide === 'buy' ? 'long' : 'short');
 const dirOf = (side: PositionSide) => (side === 'long' ? 1 : -1);
 
+/** 라운드를 이어서 하기 위해 저장하는 거래소 상태 */
+export interface ExchangeSnapshot {
+  balance: number;
+  leverage: number;
+  position: Position | null;
+  orders: Order[];
+  fills: Fill[];
+  trades: Trade[];
+  lastPrice: number;
+  time: number;
+  candleCount: number;
+  peakEquity: number;
+  maxDrawdownPct: number;
+  nextId: number;
+}
+
 export const REASON_LABEL: Record<FillReason, string> = {
   market: '시장가',
   limit: '지정가',
@@ -58,6 +74,39 @@ export class Exchange {
   constructor(lastPrice: number, time: number) {
     this.lastPrice = lastPrice;
     this.time = time;
+  }
+
+  snapshot(): ExchangeSnapshot {
+    return structuredClone({
+      balance: this.balance,
+      leverage: this.leverage,
+      position: this.position,
+      orders: this.orders,
+      fills: this.fills,
+      trades: this.trades,
+      lastPrice: this.lastPrice,
+      time: this.time,
+      candleCount: this.candleCount,
+      peakEquity: this.peakEquity,
+      maxDrawdownPct: this.maxDrawdownPct,
+      nextId: this.nextId,
+    });
+  }
+
+  static restore(s: ExchangeSnapshot): Exchange {
+    const ex = new Exchange(s.lastPrice, s.time);
+    const copy = structuredClone(s);
+    ex.balance = copy.balance;
+    ex.leverage = copy.leverage;
+    ex.position = copy.position;
+    ex.orders = copy.orders;
+    ex.fills = copy.fills;
+    ex.trades = copy.trades;
+    ex.candleCount = copy.candleCount;
+    ex.peakEquity = copy.peakEquity;
+    ex.maxDrawdownPct = copy.maxDrawdownPct;
+    ex.nextId = copy.nextId;
+    return ex;
   }
 
   // ---------- 조회 ----------

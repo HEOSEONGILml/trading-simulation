@@ -14,12 +14,25 @@ import { ResultDialog } from './components/ResultDialog.tsx';
 import { SetupDialog } from './components/SetupDialog.tsx';
 import { Game } from './game/game.ts';
 import { useIsMobile } from './useIsMobile.ts';
-import { loadSetup, loadView, saveSetup, saveView, type SetupSettings, type ViewSettings } from './settings.ts';
+import { loadPrefs, savePrefs, type Prefs, type SetupSettings, type ViewSettings } from './settings.ts';
 
-/** 로그인 확인 → 닉네임 설정 → 트레이딩 화면 */
+/** 로그인 확인 → 닉네임 설정 → 회원 설정 불러오기 → 트레이딩 화면 */
 export function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [editingNickname, setEditingNickname] = useState(false);
+  const [prefs, setPrefs] = useState<{ userId: string; prefs: Prefs } | null>(null);
+  const playerId = user?.nickname ? user.id : null;
+
+  useEffect(() => {
+    if (!playerId) return;
+    let cancelled = false;
+    void loadPrefs(playerId).then((loaded) => {
+      if (!cancelled) setPrefs({ userId: playerId, prefs: loaded });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [playerId]);
 
   useEffect(() => {
     api
@@ -32,16 +45,22 @@ export function App() {
   if (user === undefined) return <div className="auth-page muted">불러오는 중…</div>;
   if (user === null) return <AuthScreen onLogin={setUser} />;
   if (!user.nickname) return <NicknameDialog user={user} onSaved={setUser} />;
+  if (prefs?.userId !== user.id) return <div className="auth-page muted">설정 불러오는 중…</div>;
 
   const logout = async () => {
-    // 진행 중인 라운드는 기록되지 않으므로 다시 시작하도록 화면을 새로 고친다
+    // 진행 중인 라운드는 저장된 상태로 남고, 다음 로그인 때 이어서 한다
     await api.logOut().catch(() => {});
     window.location.reload();
   };
 
   return (
     <>
-      <Trainer user={user} onChangeNickname={() => setEditingNickname(true)} onLogout={logout} />
+      <Trainer
+        user={user}
+        initialPrefs={prefs.prefs}
+        onChangeNickname={() => setEditingNickname(true)}
+        onLogout={logout}
+      />
       {editingNickname && (
         <NicknameDialog
           user={user}
@@ -58,20 +77,37 @@ export function App() {
 
 interface TrainerProps {
   user: User;
+  initialPrefs: Prefs;
   onChangeNickname: () => void;
   onLogout: () => void;
 }
 
-function Trainer({ user, onChangeNickname, onLogout }: TrainerProps) {
-  const [view, setView] = useState<ViewSettings>(loadView);
-  const [setup, setSetup] = useState<SetupSettings>(loadSetup);
-  const [game] = useState(() => new Game(view.speed));
+function Trainer({ user, initialPrefs, onChangeNickname, onLogout }: TrainerProps) {
+  const [prefs, setPrefs] = useState(initialPrefs);
+  const { view, setup } = prefs;
+  const [game] = useState(() => new Game(initialPrefs.view.speed, initialPrefs.leverage));
   const version = useSyncExternalStore(game.subscribe, game.getVersion);
   const [page, setPage] = useState<Page>('trade');
   const [resultOpen, setResultOpen] = useState(false);
   const mobile = useIsMobile();
 
-  useEffect(() => () => game.dispose(), [game]);
+  const updatePrefs = (change: Partial<Prefs>) => {
+    setPrefs((prev) => {
+      const next = { ...prev, ...change };
+      savePrefs(user.id, next);
+      return next;
+    });
+  };
+  game.onLeverageChange = (leverage) => updatePrefs({ leverage });
+
+  useEffect(() => {
+    const stopWatching = game.watchPageLeave();
+    void game.resume();
+    return () => {
+      stopWatching();
+      game.dispose();
+    };
+  }, [game]);
 
   useEffect(() => {
     if (game.phase === 'finished') setResultOpen(true);
@@ -89,10 +125,7 @@ function Trainer({ user, onChangeNickname, onLogout }: TrainerProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [game]);
 
-  const updateView = (next: ViewSettings) => {
-    setView(next);
-    saveView(next);
-  };
+  const updateView = (next: ViewSettings) => updatePrefs({ view: next });
 
   const changeSpeed = (speed: number) => {
     game.setSpeed(speed);
@@ -100,9 +133,8 @@ function Trainer({ user, onChangeNickname, onLogout }: TrainerProps) {
   };
 
   const startRound = (nextSetup: SetupSettings, round: RoundSettings, speed: number) => {
-    setSetup(nextSetup);
-    saveSetup(nextSetup);
-    changeSpeed(speed);
+    game.setSpeed(speed);
+    updatePrefs({ setup: nextSetup, view: { ...view, speed } });
     setResultOpen(false);
     void game.createRound(round);
   };
@@ -120,9 +152,8 @@ function Trainer({ user, onChangeNickname, onLogout }: TrainerProps) {
     page,
     onChangeNickname,
     onLogout: () => {
-      const playing = game.phase === 'running' || game.phase === 'paused';
-      if (playing && !confirm('진행 중인 라운드는 기록되지 않습니다. 로그아웃할까요?')) return;
-      onLogout();
+      game.pause();
+      void game.saveNow().finally(onLogout);
     },
     onPageChange: setPage,
     onSpeedChange: changeSpeed,
@@ -160,6 +191,15 @@ function Trainer({ user, onChangeNickname, onLogout }: TrainerProps) {
           onClose={() => game.closeSetup()}
           onStart={startRound}
         />
+      )}
+      {page === 'trade' && game.phase === 'resuming' && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-body">
+              <p className="hint center">진행하던 라운드를 확인하는 중…</p>
+            </div>
+          </div>
+        </div>
       )}
       {page === 'trade' && resultOpen && game.result && (
         <ResultDialog

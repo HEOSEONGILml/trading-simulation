@@ -1,4 +1,4 @@
-// 회원, 세션, 라운드 결과 저장 (SQLite)
+// 회원, 세션, 회원별 설정, 진행 중인 라운드, 라운드 결과 저장 (SQLite)
 
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -37,6 +37,20 @@ export interface User {
   nickname: string | null;
   passwordHash: string;
   createdAt: number;
+}
+
+/** 진행 중인 라운드. 세션을 나갔다가 돌아와도 이어서 할 수 있도록 저장한다 */
+export interface ActiveRound {
+  id: string;
+  userId: string;
+  settings: { rangeStart: number; rangeEnd: number; historyMinutes: number; hideDate: boolean; hidePrice: boolean };
+  realStartTime: number;
+  dateOffset: number;
+  priceFactor: number;
+  pricePrecision: number;
+  createdAt: number;
+  /** 클라이언트가 보낸 진행 상태 (아직 저장된 적이 없으면 null) */
+  state: unknown;
 }
 
 export type RankingSort = 'compound' | 'average' | 'winrate';
@@ -86,6 +100,23 @@ export class Store {
         liquidation_count INTEGER NOT NULL,
         trades_json TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS user_settings (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        settings_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS active_rounds (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        settings_json TEXT NOT NULL,
+        real_start_time INTEGER NOT NULL,
+        date_offset INTEGER NOT NULL,
+        price_factor REAL NOT NULL,
+        price_precision INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        state_json TEXT,
+        updated_at INTEGER NOT NULL
+      );
     `);
     // 회원 기능 이전에 만든 DB에는 user_id 컬럼이 없다
     const columns = this.db.prepare('PRAGMA table_info(rounds)').all() as { name: string }[];
@@ -93,6 +124,10 @@ export class Store {
       this.db.exec('ALTER TABLE rounds ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE');
     }
     this.db.exec('CREATE INDEX IF NOT EXISTS rounds_user ON rounds(user_id, played_at)');
+  }
+
+  close() {
+    this.db.close();
   }
 
   // ---------- 회원 ----------
@@ -137,6 +172,69 @@ export class Store {
 
   deleteSession(token: string) {
     this.db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  }
+
+  // ---------- 회원별 설정 ----------
+
+  getSettings(userId: string): unknown {
+    const row = this.db.prepare('SELECT settings_json FROM user_settings WHERE user_id = ?').get(userId) as Row | undefined;
+    return row ? JSON.parse(row.settings_json) : null;
+  }
+
+  saveSettings(userId: string, settings: unknown) {
+    this.db
+      .prepare(
+        `INSERT INTO user_settings (user_id, settings_json, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET settings_json = excluded.settings_json, updated_at = excluded.updated_at`,
+      )
+      .run(userId, JSON.stringify(settings), Date.now());
+  }
+
+  // ---------- 진행 중인 라운드 ----------
+
+  /** 회원당 하나만 유지한다. 새 라운드를 만들면 이전 라운드는 버려진다 */
+  saveActiveRound(round: ActiveRound) {
+    this.db.prepare('DELETE FROM active_rounds WHERE user_id = ?').run(round.userId);
+    this.db
+      .prepare(
+        `INSERT INTO active_rounds (id, user_id, settings_json, real_start_time, date_offset, price_factor, price_precision,
+          created_at, state_json, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        round.id,
+        round.userId,
+        JSON.stringify(round.settings),
+        round.realStartTime,
+        round.dateOffset,
+        round.priceFactor,
+        round.pricePrecision,
+        round.createdAt,
+        round.state == null ? null : JSON.stringify(round.state),
+        Date.now(),
+      );
+  }
+
+  /** id를 생략하면 회원의 진행 중인 라운드 */
+  getActiveRound(userId: string, id?: string): ActiveRound | undefined {
+    const row = (
+      id === undefined
+        ? this.db.prepare('SELECT * FROM active_rounds WHERE user_id = ?').get(userId)
+        : this.db.prepare('SELECT * FROM active_rounds WHERE user_id = ? AND id = ?').get(userId, id)
+    ) as Row | undefined;
+    return row && toActiveRound(row);
+  }
+
+  saveRoundState(userId: string, id: string, state: unknown): boolean {
+    return (
+      this.db
+        .prepare('UPDATE active_rounds SET state_json = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+        .run(JSON.stringify(state), Date.now(), id, userId).changes > 0
+    );
+  }
+
+  deleteActiveRound(userId: string, id: string) {
+    this.db.prepare('DELETE FROM active_rounds WHERE id = ? AND user_id = ?').run(id, userId);
   }
 
   // ---------- 라운드 기록 ----------
@@ -230,6 +328,20 @@ export class Store {
 
 function toUser(r: Row): User {
   return { id: r.id, username: r.username, nickname: r.nickname, passwordHash: r.password_hash, createdAt: r.created_at };
+}
+
+function toActiveRound(r: Row): ActiveRound {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    settings: JSON.parse(r.settings_json),
+    realStartTime: r.real_start_time,
+    dateOffset: r.date_offset,
+    priceFactor: r.price_factor,
+    pricePrecision: r.price_precision,
+    createdAt: r.created_at,
+    state: r.state_json === null ? null : JSON.parse(r.state_json),
+  };
 }
 
 function toRecord(r: Row): RoundRecord {

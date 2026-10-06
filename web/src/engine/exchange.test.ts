@@ -158,4 +158,24 @@ describe('Exchange', () => {
     const peak = ex.peakEquity;
     expect(ex.maxDrawdownPct).toBeCloseTo(((peak - ex.equity()) / peak) * 100);
   });
+
+  it('저장한 상태로 복원하면 이어서 같은 결과가 나온다', () => {
+    const ex = setup();
+    ex.marketOrder('buy', 10, { stopLoss: 90 });
+    ex.limitOrder('buy', 95, 5);
+    ex.onCandle(candle(100, 103, 99, 102));
+
+    const restored = Exchange.restore(JSON.parse(JSON.stringify(ex.snapshot())));
+    expect(restored.snapshot()).toEqual(ex.snapshot());
+    // 복원본은 원본과 객체를 공유하지 않는다
+    expect(restored.orders[0]).not.toBe(ex.orders[0]);
+
+    const next = [candle(102, 102, 94, 96), candle(96, 97, 85, 88)];
+    for (const c of next) {
+      ex.onCandle(c);
+      restored.onCandle(c);
+    }
+    expect(restored.summary()).toEqual(ex.summary());
+    expect(restored.fills.map((f) => f.id)).toEqual(ex.fills.map((f) => f.id));
+  });
 });

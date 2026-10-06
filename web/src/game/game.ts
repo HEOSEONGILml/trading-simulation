@@ -1,10 +1,17 @@
 // 라운드 진행 컨트롤러: 데이터 수신, 재생 타이머, 거래소 연결
 
 import { api, type RoundRecord, type RoundSettings, type RoundStart } from '../api.ts';
-import { Exchange, ExchangeError, type OrderOptions } from '../engine/exchange.ts';
+import { Exchange, ExchangeError, type ExchangeSnapshot, type OrderOptions } from '../engine/exchange.ts';
 import { MINUTE, type Candle, type ExchangeEvent, type OrderSide } from '../engine/types.ts';
 
-export type Phase = 'setup' | 'loading' | 'ready' | 'running' | 'paused' | 'finishing' | 'finished';
+/** resuming: 이전 세션에서 끝내지 않은 라운드를 확인하고 불러오는 중 */
+export type Phase = 'resuming' | 'setup' | 'loading' | 'ready' | 'running' | 'paused' | 'finishing' | 'finished';
+
+/** 라운드를 이어서 하기 위해 서버에 저장하는 진행 상태 */
+interface SavedState {
+  version: 1;
+  exchange: ExchangeSnapshot;
+}
 
 export interface Toast {
   id: number;
@@ -24,9 +31,11 @@ export interface FinishResult {
 const FETCH_CHUNK = 1000;
 const TICK_MS = 50;
 const TOAST_MS = 3500;
+/** 재생 중 진행 상태를 저장하는 간격. 주문, 일시정지, 페이지 이탈 때는 바로 저장한다 */
+const SAVE_INTERVAL_MS = 5000;
 
 export class Game {
-  phase: Phase = 'setup';
+  phase: Phase = 'resuming';
   round: RoundStart | null = null;
   settings: RoundSettings | null = null;
   candles: Candle[] = [];
@@ -37,6 +46,9 @@ export class Game {
   result: FinishResult | null = null;
   toasts: Toast[] = [];
   version = 0;
+  /** 새 라운드의 레버리지 (회원 설정) */
+  leverage: number;
+  onLeverageChange: ((leverage: number) => void) | null = null;
 
   private phaseBeforeSetup: Phase = 'ready';
   private buffer: Candle[] = [];
@@ -52,9 +64,13 @@ export class Game {
   private resetListeners = new Set<() => void>();
   private nextToastId = 1;
   private loadToken = 0;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private saving = false;
+  private saveAgain = false;
 
-  constructor(speed: number) {
+  constructor(speed: number, leverage: number) {
     this.speed = speed;
+    this.leverage = leverage;
   }
 
   // ---------- 구독 ----------
@@ -100,34 +116,95 @@ export class Game {
 
   async createRound(settings: RoundSettings) {
     this.stopTimer();
+    this.cancelSave();
     const token = ++this.loadToken;
     this.phase = 'loading';
     this.emit();
     try {
       const round = await api.createRound(settings);
       if (token !== this.loadToken) return;
-      const last = round.history[round.history.length - 1];
-      this.round = round;
-      this.settings = settings;
-      this.candles = [...round.history];
-      this.exchange = new Exchange(last.close, round.startTime);
-      this.buffer = [];
-      this.fetchedCount = 0;
-      this.fetching = null;
-      this.serverEnded = false;
-      this.dataEnded = false;
-      this.waiting = false;
-      this.elapsed = 0;
-      this.result = null;
-      this.phase = 'ready';
-      for (const fn of this.resetListeners) fn();
-      void this.prefetch();
-      this.emit();
+      this.load('ready', round, settings, this.newExchange(round), [], [], false);
     } catch (err) {
       if (token !== this.loadToken) return;
       this.phase = 'setup';
       this.toast('error', (err as Error).message);
     }
+  }
+
+  /** 이전 세션에서 끝내지 않은 라운드가 있으면 마지막으로 저장한 시점부터 일시정지 상태로 이어받는다 */
+  async resume() {
+    this.stopTimer();
+    const token = ++this.loadToken;
+    this.phase = 'resuming';
+    this.emit();
+    try {
+      const active = await api.activeRound();
+      if (token !== this.loadToken) return;
+      if (!active) {
+        this.phase = 'setup';
+        this.emit();
+        return;
+      }
+      const { settings, state, ...round } = active;
+      const saved = parseState(state);
+      const revealedCount = saved?.exchange.candleCount ?? 0;
+
+      // 이미 지나간 캔들을 다시 받아 차트를 그대로 복원한다
+      const future: Candle[] = [];
+      let ended = false;
+      while (future.length < revealedCount && !ended) {
+        const res = await api.futureCandles(round.roundId, future.length, FETCH_CHUNK);
+        if (token !== this.loadToken) return;
+        future.push(...res.candles);
+        ended = res.ended;
+      }
+
+      const exchange = saved ? Exchange.restore(saved.exchange) : this.newExchange(round);
+      const revealed = future.slice(0, revealedCount);
+      this.load(saved ? 'paused' : 'ready', round, settings, exchange, revealed, future.slice(revealedCount), ended);
+      if (saved) this.toast('info', '진행하던 라운드를 이어서 합니다. ▶ 재개를 누르면 계속됩니다.');
+    } catch (err) {
+      if (token !== this.loadToken) return;
+      this.phase = 'setup';
+      this.toast('error', `진행하던 라운드를 불러오지 못했습니다: ${(err as Error).message}`);
+    }
+  }
+
+  private newExchange(round: RoundStart) {
+    const exchange = new Exchange(round.history[round.history.length - 1].close, round.startTime);
+    try {
+      exchange.setLeverage(this.leverage);
+    } catch {
+      // 잘못 저장된 값이면 기본 레버리지를 쓴다
+    }
+    return exchange;
+  }
+
+  private load(
+    phase: Phase,
+    round: RoundStart,
+    settings: RoundSettings,
+    exchange: Exchange,
+    revealed: Candle[],
+    buffer: Candle[],
+    serverEnded: boolean,
+  ) {
+    this.round = round;
+    this.settings = settings;
+    this.candles = [...round.history, ...revealed];
+    this.exchange = exchange;
+    this.buffer = buffer;
+    this.fetchedCount = revealed.length + buffer.length;
+    this.fetching = null;
+    this.serverEnded = serverEnded;
+    this.dataEnded = false;
+    this.waiting = false;
+    this.elapsed = 0;
+    this.result = null;
+    this.phase = phase;
+    for (const fn of this.resetListeners) fn();
+    void this.prefetch();
+    this.emit();
   }
 
   start() {
@@ -143,6 +220,7 @@ export class Game {
     if (this.phase !== 'running') return;
     this.stopTimer();
     this.phase = 'paused';
+    this.scheduleSave();
     this.emit();
   }
 
@@ -181,6 +259,7 @@ export class Game {
     const round = this.round;
     if (!ex || !round || !['ready', 'running', 'paused'].includes(this.phase)) return;
     this.stopTimer();
+    this.cancelSave();
     this.phase = 'finishing';
     this.emit();
 
@@ -215,6 +294,7 @@ export class Game {
     try {
       const result = action(ex);
       if (success) this.toast('success', success);
+      this.scheduleSave();
       this.emit();
       return result;
     } catch (err) {
@@ -261,6 +341,9 @@ export class Game {
     if (!ex) return false;
     try {
       ex.setLeverage(leverage);
+      this.leverage = leverage;
+      this.onLeverageChange?.(leverage);
+      this.scheduleSave();
       this.emit();
       return true;
     } catch (err) {
@@ -318,7 +401,10 @@ export class Game {
       revealed = true;
     }
     if (this.buffer.length < Math.max(300, this.speed * 5)) void this.prefetch();
-    if (revealed) this.emit();
+    if (revealed) {
+      this.scheduleSave(SAVE_INTERVAL_MS);
+      this.emit();
+    }
   };
 
   private reveal(candle: Candle) {
@@ -361,7 +447,85 @@ export class Game {
     }
   }
 
+  // ---------- 진행 상태 저장 ----------
+
+  private canSave() {
+    return !!this.round && !!this.exchange && ['ready', 'running', 'paused'].includes(this.phase);
+  }
+
+  private savedState(): SavedState {
+    return { version: 1, exchange: this.exchange!.snapshot() };
+  }
+
+  /** delay 뒤에 진행 상태를 저장한다. 이미 예약된 저장이 있으면 더 이른 쪽을 따른다 */
+  private scheduleSave(delay = 0) {
+    if (!this.canSave()) return;
+    if (this.saveTimer) {
+      if (delay > 0) return;
+      clearTimeout(this.saveTimer);
+    }
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      void this.saveState();
+    }, delay);
+  }
+
+  private cancelSave() {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+  }
+
+  /** 저장 요청은 한 번에 하나씩 보내 늦게 도착한 옛 상태가 최신 상태를 덮어쓰지 않게 한다 */
+  private async saveState() {
+    if (!this.canSave()) return;
+    if (this.saving) {
+      this.saveAgain = true;
+      return;
+    }
+    this.saving = true;
+    try {
+      await api.saveRoundState(this.round!.roundId, this.savedState());
+    } catch {
+      // 다음 저장 때 다시 보낸다
+    } finally {
+      this.saving = false;
+      if (this.saveAgain) {
+        this.saveAgain = false;
+        this.scheduleSave();
+      }
+    }
+  }
+
+  /** 로그아웃 등으로 화면을 떠나기 전에 바로 저장한다 */
+  async saveNow() {
+    this.cancelSave();
+    if (this.canSave()) await api.saveRoundState(this.round!.roundId, this.savedState()).catch(() => {});
+  }
+
+  /** 페이지를 닫거나 다른 앱으로 전환할 때 진행 상태를 저장한다. 해제 함수를 돌려준다 */
+  watchPageLeave() {
+    const flush = (e: Event) => {
+      if (e.type === 'visibilitychange' && document.visibilityState !== 'hidden') return;
+      if (!this.canSave()) return;
+      this.cancelSave();
+      // keepalive 요청은 페이지가 닫히는 중에도 끝까지 전송된다
+      void api.saveRoundState(this.round!.roundId, this.savedState(), true).catch(() => {});
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', flush);
+    };
+  }
+
   dispose() {
     this.stopTimer();
+    this.cancelSave();
   }
+}
+
+function parseState(state: unknown): SavedState | null {
+  const s = state as Partial<SavedState> | null;
+  return s?.version === 1 && s.exchange && Number.isFinite(s.exchange.candleCount) ? (s as SavedState) : null;
 }

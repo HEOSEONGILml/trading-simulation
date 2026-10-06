@@ -130,6 +130,27 @@ export const api = {
       body: JSON.stringify(result),
     }),
 
+  /** 이전 세션에서 끝내지 않은 라운드 (state는 마지막으로 저장한 진행 상태) */
+  async activeRound(): Promise<(RoundStart & { settings: RoundSettings; state: unknown }) | null> {
+    const res = await request<{
+      round: (Omit<RoundStart, 'history'> & { history: RawCandle[]; settings: RoundSettings; state: unknown }) | null;
+    }>('/api/rounds/active');
+    return res.round && { ...res.round, history: res.round.history.map(toCandle) };
+  },
+
+  /** keepalive는 페이지를 떠나는 중에도 요청을 끝까지 보낸다 (본문 64KB 제한) */
+  saveRoundState(roundId: string, state: unknown, keepalive = false) {
+    const body = JSON.stringify({ state });
+    return request<{ ok: true }>(`/api/rounds/${roundId}/state`, {
+      method: 'PUT',
+      body,
+      keepalive: keepalive && body.length < 60_000,
+    });
+  },
+
+  settings: () => request<{ settings: unknown }>('/api/settings'),
+  saveSettings: (settings: unknown) => request<{ ok: true }>('/api/settings', post({ settings }, 'PUT')),
+
   history: () => request<{ summary: HistorySummary; rounds: RoundRecord[] }>('/api/history'),
 
   deleteHistory: (id: string) => request<{ ok: true }>(`/api/history/${id}`, { method: 'DELETE' }),

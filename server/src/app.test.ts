@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { buildApp } from './app.ts';
 import { createDisguise, precisionFor } from './disguise.ts';
@@ -143,4 +146,63 @@ test('라운드 진행과 회원별 기록, 랭킹', { timeout: 60_000 }, async 
   const average = (await app.inject({ url: '/api/ranking?sort=average', headers: bob })).json();
   assert.equal(average.entries.length, 0);
   await app.close();
+});
+
+test('회원별 설정 저장', async () => {
+  const app = buildApp({ dbPath: ':memory:' });
+  const alice = await signUp(app, 'alice', '앨리스');
+  const bob = await signUp(app, 'bobby', '밥돌이');
+
+  assert.equal((await app.inject({ url: '/api/settings', headers: alice })).json().settings, null);
+  const settings = { setup: { rangeStart: '2021-01-01', historyMinutes: 4320 }, view: { mainIndicators: ['BOLL'] } };
+  const saved = await app.inject({ method: 'PUT', url: '/api/settings', headers: alice, payload: { settings } });
+  assert.equal(saved.statusCode, 200, saved.body);
+  assert.deepEqual((await app.inject({ url: '/api/settings', headers: alice })).json().settings, settings);
+  assert.equal((await app.inject({ url: '/api/settings', headers: bob })).json().settings, null);
+
+  const bad = await app.inject({ method: 'PUT', url: '/api/settings', headers: alice, payload: { settings: [1] } });
+  assert.equal(bad.statusCode, 400);
+  await app.close();
+});
+
+test('세션을 나갔다가 진행 중인 라운드를 이어서 한다', { timeout: 60_000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'trading-test-'));
+  const dbPath = join(dir, 'test.db');
+  let app = buildApp({ dbPath });
+  try {
+    const alice = await signUp(app, 'alice', '앨리스');
+    const bob = await signUp(app, 'bobby', '밥돌이');
+    assert.equal((await app.inject({ url: '/api/rounds/active', headers: alice })).json().round, null);
+
+    const round = await createRound(app, alice);
+    const state = { exchange: { candleCount: 5, balance: 9_000 } };
+    const put = (headers: Record<string, string>) =>
+      app.inject({ method: 'PUT', url: `/api/rounds/${round.roundId}/state`, headers, payload: { state } });
+    assert.equal((await put(bob)).statusCode, 400);
+    assert.equal((await put(alice)).statusCode, 200);
+    const first = (await app.inject({ url: `/api/rounds/${round.roundId}/candles?from=0&count=5`, headers: alice })).json();
+    await app.close();
+
+    // 서버가 재시작되어도 같은 라운드, 같은 차트로 이어진다
+    app = buildApp({ dbPath });
+    const resumed = (await app.inject({ url: '/api/rounds/active', headers: alice })).json().round;
+    assert.equal(resumed.roundId, round.roundId);
+    assert.equal(resumed.startTime, round.startTime);
+    assert.deepEqual(resumed.history, round.history);
+    assert.deepEqual(resumed.state, state);
+    const again = (await app.inject({ url: `/api/rounds/${round.roundId}/candles?from=0&count=5`, headers: alice })).json();
+    assert.deepEqual(again, first);
+    assert.equal((await app.inject({ url: '/api/rounds/active', headers: bob })).json().round, null);
+
+    // 새 라운드를 만들면 이전 라운드는 버려지고, 끝내면 이어할 라운드가 없다
+    const next = await createRound(app, alice);
+    assert.equal((await app.inject({ url: '/api/rounds/active', headers: alice })).json().round.state, null);
+    const stale = await app.inject({ url: `/api/rounds/${round.roundId}/candles?from=0&count=1`, headers: alice });
+    assert.equal(stale.statusCode, 400);
+    await app.inject({ method: 'POST', url: `/api/rounds/${next.roundId}/finish`, headers: alice, payload: RESULT });
+    assert.equal((await app.inject({ url: '/api/rounds/active', headers: alice })).json().round, null);
+  } finally {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

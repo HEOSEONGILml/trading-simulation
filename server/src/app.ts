@@ -14,7 +14,7 @@ import {
 } from './auth.ts';
 import { MINUTE } from './binance.ts';
 import { RANKING_MIN_ROUNDS, Store, summarize, type RankingSort, type RoundResultInput, type User } from './db.ts';
-import { RoundError, createRound, finishRound, getFutureCandles, type RoundSettings } from './rounds.ts';
+import { RoundError, Rounds, type RoundSettings } from './rounds.ts';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -23,14 +23,17 @@ declare module 'fastify' {
 }
 
 const MAX_FUTURE_BATCH = 2000;
+const MAX_SETTINGS_LENGTH = 10_000;
 const RANKING_SORTS: RankingSort[] = ['compound', 'average', 'winrate'];
 
 export function buildApp(options: { dbPath: string; staticDir?: string }) {
   // cloudflared 터널 뒤에서 실행되므로 X-Forwarded-* 헤더를 신뢰한다
   const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 10 * 1024 * 1024, trustProxy: true });
   const store = new Store(options.dbPath);
+  const rounds = new Rounds(store);
   const limiter = new AttemptLimiter();
 
+  app.addHook('onClose', async () => store.close());
   app.register(fastifyCookie);
   app.decorateRequest('user', null);
 
@@ -105,6 +108,21 @@ export function buildApp(options: { dbPath: string; staticDir?: string }) {
     return { user: publicUser({ ...user, nickname }) };
   });
 
+  // ---------- 회원별 설정 ----------
+
+  app.get('/api/settings', async (req) => ({ settings: store.getSettings(requirePlayer(req).id) }));
+
+  app.put<{ Body: { settings?: unknown } }>('/api/settings', async (req, reply) => {
+    const user = requirePlayer(req);
+    const settings = req.body?.settings;
+    const valid = settings !== null && typeof settings === 'object' && !Array.isArray(settings);
+    if (!valid || JSON.stringify(settings).length > MAX_SETTINGS_LENGTH) {
+      return reply.status(400).send({ error: '설정 값이 올바르지 않습니다.' });
+    }
+    store.saveSettings(user.id, settings);
+    return { ok: true };
+  });
+
   // ---------- 라운드 ----------
 
   app.post<{ Body: RoundSettings }>('/api/rounds', async (req) => {
@@ -113,7 +131,15 @@ export function buildApp(options: { dbPath: string; staticDir?: string }) {
     if (![rangeStart, rangeEnd, historyMinutes].every(Number.isFinite)) {
       throw new RoundError('설정 값이 올바르지 않습니다.');
     }
-    return createRound(user.id, { rangeStart, rangeEnd, historyMinutes, hideDate: !!hideDate, hidePrice: !!hidePrice });
+    return rounds.create(user.id, { rangeStart, rangeEnd, historyMinutes, hideDate: !!hideDate, hidePrice: !!hidePrice });
+  });
+
+  /** 이전 세션에서 끝내지 않은 라운드 */
+  app.get('/api/rounds/active', async (req) => ({ round: await rounds.resume(requirePlayer(req).id) }));
+
+  app.put<{ Params: { id: string }; Body: { state?: unknown } }>('/api/rounds/:id/state', async (req) => {
+    rounds.saveState(requirePlayer(req).id, req.params.id, req.body?.state);
+    return { ok: true };
   });
 
   app.get<{ Params: { id: string }; Querystring: { from?: string; count?: string } }>(
@@ -123,13 +149,13 @@ export function buildApp(options: { dbPath: string; staticDir?: string }) {
       const from = Math.max(0, Math.floor(Number(req.query.from ?? 0)));
       const count = Math.min(MAX_FUTURE_BATCH, Math.max(1, Math.floor(Number(req.query.count ?? 500))));
       if (!Number.isFinite(from) || !Number.isFinite(count)) throw new RoundError('잘못된 요청입니다.');
-      return getFutureCandles(user.id, req.params.id, from, count);
+      return rounds.futureCandles(user.id, req.params.id, from, count);
     },
   );
 
   app.post<{ Params: { id: string }; Body: RoundResultInput }>('/api/rounds/:id/finish', async (req) => {
     const user = requirePlayer(req);
-    const reveal = finishRound(user.id, req.params.id);
+    const reveal = rounds.finish(user.id, req.params.id);
     const result = req.body;
     const record = {
       id: req.params.id,
