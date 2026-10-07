@@ -1,0 +1,12 @@
+# HTTPS 인증서는 Caddy가 Let's Encrypt로 자동 발급, 갱신한다
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:3001 {
+		# Cloudflare를 거치지 않으므로 클라이언트가 보낸 값은 버린다 (IP별 시도 제한 우회 방지)
+		header_up -Cf-Connecting-Ip
+	}
+}
+
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}

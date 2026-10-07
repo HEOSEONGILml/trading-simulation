@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { deleteAccount } from '../account.ts';
 import type { User } from '../api.ts';
 import type { Game } from '../game/game.ts';
 import { formatDateTime, formatDuration, formatNumber, weekday } from '../format.ts';
@@ -42,6 +43,21 @@ export interface HeaderProps {
   onShowResult: () => void;
 }
 
+/** 약관, 개인정보처리방침, 회원 탈퇴 (PC와 모바일 메뉴 공통) */
+export function LegalLinks() {
+  return (
+    <div className="dropdown-legal">
+      <a href="/terms.html" target="_blank" rel="noreferrer">
+        이용약관
+      </a>
+      <a href="/privacy.html" target="_blank" rel="noreferrer">
+        개인정보처리방침
+      </a>
+      <button onClick={() => void deleteAccount()}>회원 탈퇴</button>
+    </div>
+  );
+}
+
 function UserMenu({ user, onChangeNickname, onLogout }: Pick<HeaderProps, 'user' | 'onChangeNickname' | 'onLogout'>) {
   const [open, setOpen] = useState(false);
   return (
@@ -64,6 +80,7 @@ function UserMenu({ user, onChangeNickname, onLogout }: Pick<HeaderProps, 'user'
           <button className="dropdown-item" onClick={onLogout}>
             로그아웃
           </button>
+          <LegalLinks />
         </div>
       )}
     </div>

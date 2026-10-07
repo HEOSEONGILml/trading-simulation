@@ -59,6 +59,7 @@ export interface ActiveRound {
 }
 
 export type RankingSort = 'compound' | 'average' | 'winrate';
+export type EventType = 'signup' | 'visit' | 'round_start' | 'round_finish';
 export const RANKING_MIN_ROUNDS = 5;
 
 type Row = Record<string, never>;
@@ -122,6 +123,12 @@ export class Store {
         state_json TEXT,
         updated_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS events (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type TEXT NOT NULL,
+        at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS events_user ON events(user_id, at);
     `);
     // 회원 기능 이전에 만든 DB에는 user_id 컬럼이 없다
     const columns = this.db.prepare('PRAGMA table_info(rounds)').all() as { name: string }[];
@@ -164,6 +171,70 @@ export class Store {
 
   setNickname(userId: string, nickname: string) {
     this.db.prepare('UPDATE users SET nickname = ? WHERE id = ?').run(nickname, userId);
+  }
+
+  /** 세션, 설정, 라운드, 기록, 이벤트는 외래 키로 함께 삭제된다 */
+  deleteUser(id: string) {
+    this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  }
+
+  // ---------- 이용 지표용 이벤트 ----------
+
+  logEvent(userId: string, type: EventType, at = Date.now()) {
+    this.db.prepare('INSERT INTO events (user_id, type, at) VALUES (?, ?, ?)').run(userId, type, at);
+  }
+
+  /** 방문은 회원별로 하루(한국 시간)에 한 번만 기록한다 */
+  logVisit(userId: string, at = Date.now()) {
+    const seen = this.db
+      .prepare("SELECT 1 FROM events WHERE user_id = ? AND type = 'visit' AND at >= ?")
+      .get(userId, kstDayStart(at));
+    if (!seen) this.logEvent(userId, 'visit', at);
+  }
+
+  /** 검증 지표 (PLAN.md 4장) */
+  metrics(now = Date.now()) {
+    const users = this.db.prepare('SELECT id, created_at FROM users').all() as { id: string; created_at: number }[];
+    const events = this.db.prepare('SELECT user_id, type, at FROM events').all() as {
+      user_id: string;
+      type: EventType;
+      at: number;
+    }[];
+    const byUser = new Map<string, { type: EventType; at: number }[]>();
+    for (const e of events) {
+      const list = byUser.get(e.user_id) ?? [];
+      list.push(e);
+      byUser.set(e.user_id, list);
+    }
+    const has = (userId: string, type: EventType) => (byUser.get(userId) ?? []).some((e) => e.type === type);
+    const pct = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : null);
+
+    // 첫 판 완료율: 라운드를 시작해본 회원 중 한 판이라도 끝까지 마친 비율
+    const starters = users.filter((u) => has(u.id, 'round_start'));
+    const finishers = starters.filter((u) => has(u.id, 'round_finish'));
+
+    // 7일 재방문율: 가입 후 8일이 지난 회원 중 가입 다음 날부터 7일 안에 다시 활동한 비율
+    const matured = users.filter((u) => u.created_at <= now - 8 * DAY);
+    const returned = matured.filter((u) => {
+      const from = kstDayStart(u.created_at) + DAY;
+      return (byUser.get(u.id) ?? []).some((e) => e.at >= from && e.at < from + 7 * DAY);
+    });
+
+    const weekAgo = now - 7 * DAY;
+    const activeUsers = new Set(events.filter((e) => e.at >= weekAgo).map((e) => e.user_id)).size;
+    const finishedRounds = events.filter((e) => e.type === 'round_finish' && e.at >= weekAgo).length;
+
+    return {
+      users: users.length,
+      firstRound: { started: starters.length, finished: finishers.length, completionPct: pct(finishers.length, starters.length) },
+      retention7d: { cohort: matured.length, returned: returned.length, pct: pct(returned.length, matured.length) },
+      last7Days: {
+        signups: users.filter((u) => u.created_at >= weekAgo).length,
+        activeUsers,
+        finishedRounds,
+        roundsPerActiveUser: activeUsers ? Math.round((finishedRounds / activeUsers) * 10) / 10 : null,
+      },
+    };
   }
 
   // ---------- 세션 ----------
@@ -336,6 +407,14 @@ export class Store {
       .sort((a, b) => b[key[sort]] - a[key[sort]] || b.roundCount - a.roundCount)
       .map((e, i) => ({ rank: i + 1, ...e }));
   }
+}
+
+const DAY = 24 * 3600_000;
+const KST_OFFSET = 9 * 3600_000;
+
+/** at이 속한 한국 시간 날짜의 0시 (UTC 밀리초) */
+function kstDayStart(at: number): number {
+  return Math.floor((at + KST_OFFSET) / DAY) * DAY - KST_OFFSET;
 }
 
 function toUser(r: Row): User {

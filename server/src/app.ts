@@ -77,11 +77,15 @@ export function buildApp(options: { dbPath: string; staticDir?: string }) {
 
   // ---------- 회원 ----------
 
-  app.get('/api/auth/me', async (req) => ({ user: req.user ? publicUser(req.user) : null }));
+  app.get('/api/auth/me', async (req) => {
+    if (req.user) store.logVisit(req.user.id);
+    return { user: req.user ? publicUser(req.user) : null };
+  });
 
   app.post<{ Body: { username?: unknown; password?: unknown } }>('/api/auth/signup', async (req, reply) => {
     limiter.check(clientIp(req));
     const user = await signUp(store, req.body?.username, req.body?.password);
+    store.logEvent(user.id, 'signup', user.createdAt);
     setSessionCookie(req, reply, user.id);
     return { user: publicUser(user) };
   });
@@ -96,6 +100,20 @@ export function buildApp(options: { dbPath: string; staticDir?: string }) {
   app.post('/api/auth/logout', async (req, reply) => {
     const token = req.cookies[SESSION_COOKIE];
     if (token) store.deleteSession(token);
+    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    return { ok: true };
+  });
+
+  /** 회원 탈퇴: 비밀번호를 다시 확인하고 회원의 모든 데이터를 삭제한다 */
+  app.delete<{ Body: { password?: unknown } }>('/api/auth/account', async (req, reply) => {
+    const user = requireUser(req);
+    limiter.check(clientIp(req));
+    const ok = await logIn(store, user.username, req.body?.password).then(
+      () => true,
+      () => false,
+    );
+    if (!ok) throw new AuthError('비밀번호가 올바르지 않습니다.');
+    store.deleteUser(user.id);
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
     return { ok: true };
   });
@@ -131,7 +149,9 @@ export function buildApp(options: { dbPath: string; staticDir?: string }) {
     if (![rangeStart, rangeEnd, historyMinutes].every(Number.isFinite)) {
       throw new RoundError('설정 값이 올바르지 않습니다.');
     }
-    return rounds.create(user.id, { rangeStart, rangeEnd, historyMinutes, hideDate: !!hideDate, hidePrice: !!hidePrice });
+    const round = await rounds.create(user.id, { rangeStart, rangeEnd, historyMinutes, hideDate: !!hideDate, hidePrice: !!hidePrice });
+    store.logEvent(user.id, 'round_start');
+    return round;
   });
 
   /** 이전 세션에서 끝내지 않은 라운드 */
@@ -184,7 +204,10 @@ export function buildApp(options: { dbPath: string; staticDir?: string }) {
     };
     // 시간이 흐르지 않은 라운드는 기록하지 않는다
     const saved = record.candleCount > 0;
-    if (saved) store.insertRound(record);
+    if (saved) {
+      store.insertRound(record);
+      store.logEvent(user.id, 'round_finish');
+    }
     return { saved, record };
   });
 

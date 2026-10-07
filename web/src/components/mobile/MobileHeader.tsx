@@ -3,7 +3,7 @@ import { INITIAL_BALANCE } from '../../engine/exchange.ts';
 import type { Game } from '../../game/game.ts';
 import { formatDateTime, formatDuration, formatNumber, formatSigned, pnlClass, weekday } from '../../format.ts';
 import { SPEEDS } from '../../settings.ts';
-import type { HeaderProps } from '../Header.tsx';
+import { LegalLinks, type HeaderProps } from '../Header.tsx';
 
 function Clock({ game }: { game: Game }) {
   const [, setTick] = useState(0);
@@ -53,6 +53,7 @@ function Menu({ user, onPageChange, onChangeNickname, onLogout }: Pick<HeaderPro
             <button className="dropdown-item" onClick={pick(onLogout)}>
               로그아웃
             </button>
+            <LegalLinks />
           </div>
         </>
       )}

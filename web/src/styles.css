@@ -970,3 +970,35 @@ button.dropdown-item {
 .history-page .chips {
   margin-bottom: 8px;
 }
+
+.dropdown-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 6px;
+  padding: 8px 12px 2px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+.dropdown-legal a,
+.dropdown-legal button {
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.dropdown-legal a:hover,
+.dropdown-legal button:hover {
+  color: var(--text-2);
+}
+.auth-legal {
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.auth-legal a {
+  color: var(--text-2);
+}

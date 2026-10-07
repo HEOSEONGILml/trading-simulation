@@ -112,6 +112,7 @@ export const api = {
   signUp: (username: string, password: string) => request<{ user: User }>('/api/auth/signup', post({ username, password })),
   logIn: (username: string, password: string) => request<{ user: User }>('/api/auth/login', post({ username, password })),
   logOut: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
+  deleteAccount: (password: string) => request<{ ok: true }>('/api/auth/account', post({ password }, 'DELETE')),
   setNickname: (nickname: string) => request<{ user: User }>('/api/auth/nickname', post({ nickname }, 'PUT')),
   ranking: (sort: RankingSort) =>
     request<{ sort: RankingSort; minRounds: number; entries: RankingEntry[] }>(`/api/ranking?sort=${sort}`),

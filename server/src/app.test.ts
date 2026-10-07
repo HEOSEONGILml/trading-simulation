@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { buildApp } from './app.ts';
+import { Store } from './db.ts';
 import { createDisguise, precisionFor } from './disguise.ts';
 
 const WEEK = 7 * 24 * 3600_000;
@@ -211,4 +212,60 @@ test('세션을 나갔다가 진행 중인 라운드를 이어서 한다', { tim
     await app.close();
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('회원 탈퇴는 비밀번호를 확인하고 모든 데이터를 지운다', async () => {
+  const app = buildApp({ dbPath: ':memory:' });
+  const alice = await signUp(app, 'alice', '앨리스');
+  const settings = { view: { mainIndicators: ['BOLL'] } };
+  await app.inject({ method: 'PUT', url: '/api/settings', headers: alice, payload: { settings } });
+
+  const wrong = await app.inject({ method: 'DELETE', url: '/api/auth/account', headers: alice, payload: { password: 'wrongpass1' } });
+  assert.equal(wrong.statusCode, 400);
+  const ok = await app.inject({ method: 'DELETE', url: '/api/auth/account', headers: alice, payload: { password: 'password123' } });
+  assert.equal(ok.statusCode, 200, ok.body);
+
+  assert.equal((await app.inject({ url: '/api/auth/me', headers: alice })).json().user, null);
+  const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: 'alice', password: 'password123' } });
+  assert.equal(login.statusCode, 401);
+  // 같은 아이디와 닉네임으로 다시 가입할 수 있다
+  const again = await signUp(app, 'alice', '앨리스');
+  assert.equal((await app.inject({ url: '/api/settings', headers: again })).json().settings, null);
+  await app.close();
+});
+
+test('검증 지표: 첫 판 완료율과 7일 재방문율', () => {
+  const store = new Store(':memory:');
+  const DAY = 24 * 3600_000;
+  const now = Date.UTC(2026, 9, 20, 3);
+  const join = (id: string, at: number) => {
+    store.createUser({ id, username: id, nickname: id, passwordHash: 'x', createdAt: at });
+    store.logEvent(id, 'signup', at);
+  };
+
+  // a: 10일 전 가입, 한 판 끝냄, 3일 뒤 재방문
+  join('a', now - 10 * DAY);
+  store.logEvent('a', 'round_start', now - 10 * DAY);
+  store.logEvent('a', 'round_finish', now - 10 * DAY);
+  store.logVisit('a', now - 7 * DAY);
+  // b: 10일 전 가입, 시작만 하고 다시 오지 않음
+  join('b', now - 10 * DAY);
+  store.logEvent('b', 'round_start', now - 10 * DAY);
+  // c: 어제 가입 (재방문율 집계 대상 아님)
+  join('c', now - DAY);
+  store.logEvent('c', 'round_start', now - DAY);
+  store.logEvent('c', 'round_finish', now - DAY);
+
+  // 방문은 하루에 한 번만 기록한다
+  store.logVisit('c', now);
+  store.logVisit('c', now + 1000);
+
+  const m = store.metrics(now);
+  assert.equal(m.users, 3);
+  assert.deepEqual(m.firstRound, { started: 3, finished: 2, completionPct: 66.7 });
+  assert.deepEqual(m.retention7d, { cohort: 2, returned: 1, pct: 50 });
+  assert.equal(m.last7Days.signups, 1);
+  assert.equal(m.last7Days.activeUsers, 2);
+  assert.equal(m.last7Days.finishedRounds, 1);
+  store.close();
 });

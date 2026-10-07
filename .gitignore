@@ -224,3 +224,6 @@ node_modules/
 *.tsbuildinfo
 server/data/
 .idea/
+
+# 운영 서버 DB 백업
+backups/

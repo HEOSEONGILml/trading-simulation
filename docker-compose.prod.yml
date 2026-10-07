@@ -1,0 +1,45 @@
+# 운영 서버용: Caddy(HTTPS) + 앱 + 매일 DB 백업
+# 실행: DOMAIN=example.com docker compose -f docker-compose.prod.yml up -d --build
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - app-data:/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN 환경 변수가 필요합니다}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # 하루에 한 번 SQLite 온라인 백업, 14일치 보관
+  backup:
+    image: alpine:3
+    restart: unless-stopped
+    volumes:
+      - app-data:/data:ro
+      - ./backups:/backups
+    command: >
+      sh -c "apk add --no-cache sqlite >/dev/null &&
+      while true; do
+        sqlite3 /data/results.db \".backup /backups/results-$$(date +%F).db\" &&
+        find /backups -name 'results-*.db' -mtime +14 -delete;
+        sleep 86400;
+      done"
+
+volumes:
+  app-data:
+  caddy-data:
+  caddy-config:

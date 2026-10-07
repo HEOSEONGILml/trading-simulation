@@ -15,6 +15,18 @@ docker compose logs tunnel | grep trycloudflare.com   # 발급된 접속 주소 
 - 서버 PC에서는 `http://localhost:3001`로도 접속할 수 있습니다.
 - 바이낸스는 미국 등 일부 지역에서 API 접속을 차단합니다. 서버는 바이낸스 API에 접속 가능한 지역에서 실행해야 합니다.
 
+### 운영 서버 (고정 도메인)
+
+`docker-compose.prod.yml`은 Caddy(HTTPS 자동 발급)와 앱, 매일 DB 백업(`backups/`, 14일 보관)을 띄웁니다.
+
+```bash
+# deploy/.env 에 HOST=ubuntu@<서버 IP>, DOMAIN=<도메인> 을 적은 뒤
+deploy/deploy.sh          # 커밋된 코드를 서버로 올리고 다시 빌드
+ssh -i ~/.ssh/trading_sim_deploy <HOST> 'cd ~/app && docker compose -f docker-compose.prod.yml exec app node server/src/metrics.ts'   # 검증 지표
+```
+
+배포 스크립트는 `web/public`에 채우지 않은 자리표시자(`{{...}}`)가 있으면 멈춥니다.
+
 환경 변수 (Dockerfile 기본값):
 
 | 이름 | 기본값 | 설명 |
@@ -39,7 +51,8 @@ npm run typecheck
 | 경로 | 내용 |
 |---|---|
 | `server/src/auth.ts` | 회원가입/로그인 (scrypt 비밀번호 해시, httpOnly 쿠키 세션, IP별 시도 제한) |
-| `server/src/db.ts` | 회원, 세션, 회원별 설정, 진행 중인 라운드, 라운드 기록 SQLite 저장과 랭킹 계산 |
+| `server/src/db.ts` | 회원, 세션, 회원별 설정, 진행 중인 라운드, 라운드 기록 SQLite 저장과 랭킹 계산, 이용 이벤트(가입, 방문, 라운드 시작/종료)와 검증 지표 |
+| `server/src/metrics.ts` | 검증 지표(첫 판 완료율, 7일 재방문율, 최근 7일 활동) 출력 |
 | `server/src/binance.ts` | 바이낸스 선물 1분봉 API 조회 |
 | `server/src/rounds.ts` | 라운드 생성(무작위 시점), 미래 캔들 제공, 진행 상태 저장과 이어하기. 라운드가 끝날 때까지 실제 시점/가격을 클라이언트에 보내지 않음 |
 | `server/src/disguise.ts` | 더미 날짜(7일 단위 이동, 요일·시각 유지)와 더미 가격(1,000 단위 시작가, 비율 유지) |
@@ -47,6 +60,7 @@ npm run typecheck
 | `web/src/game/game.ts` | 재생 타이머, 배속, 데이터 미리 받기, 진행 상태 저장과 이어하기, 라운드 종료 |
 | `web/src/chart/` | KLineChart 차트, 그리기 도구, 포지션/주문 가격선 |
 | `web/src/components/` | PC 화면, 로그인/닉네임, 기록·랭킹 페이지 |
+| `web/public/` | 이용약관(`terms.html`), 개인정보처리방침(`privacy.html`) |
 | `web/src/components/mobile/` | 모바일 화면 (폭 820px 이하) |
 
 ## 회원과 랭킹

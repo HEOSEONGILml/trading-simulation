@@ -77,6 +77,19 @@ export function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
         <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
           {mode === 'login' ? '로그인' : '가입하기'}
         </button>
+        <p className="hint auth-legal">
+          {mode === 'signup' && '가입하면 '}
+          <a href="/terms.html" target="_blank" rel="noreferrer">
+            이용약관
+          </a>
+          과{' '}
+          <a href="/privacy.html" target="_blank" rel="noreferrer">
+            개인정보처리방침
+          </a>
+          {mode === 'signup' ? '에 동의하는 것으로 봅니다.' : ''}
+          <br />
+          모의 매매 연습 도구이며 투자 권유가 아닙니다.
+        </p>
       </form>
     </div>
   );
