@@ -15,6 +15,8 @@ export interface ViewSettings {
   speed: number;
   mainIndicators: string[];
   subIndicators: string[];
+  /** 차트에서 숨긴 가격선 (entry, takeProfit, stopLoss, liquidation, orders) */
+  hiddenLines: string[];
 }
 
 export interface Prefs {
@@ -51,6 +53,7 @@ export const DEFAULT_VIEW: ViewSettings = {
   speed: 10,
   mainIndicators: ['MA'],
   subIndicators: ['VOL'],
+  hiddenLines: [],
 };
 
 export const DEFAULT_LEVERAGE = 20;

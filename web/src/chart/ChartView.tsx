@@ -13,6 +13,14 @@ const MAIN_PANE = 'candle_pane';
 export const MAIN_INDICATORS = ['MA', 'EMA', 'BOLL', 'SAR'];
 export const SUB_INDICATORS = ['VOL', 'MACD', 'RSI', 'KDJ', 'OBV', 'CCI', 'WR', 'DMI'];
 
+export const PRICE_LINES = [
+  { key: 'entry', label: '진입' },
+  { key: 'takeProfit', label: '익절' },
+  { key: 'stopLoss', label: '손절' },
+  { key: 'liquidation', label: '청산가' },
+  { key: 'orders', label: '지정가 주문' },
+];
+
 const TRADE_GROUP = 'trade';
 const FILL_GROUP = 'fills';
 const DRAWING_GROUP = 'drawings';
@@ -54,6 +62,7 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
   const [magnet, setMagnet] = useState(false);
   const [drawingsHidden, setDrawingsHidden] = useState(false);
   const [indicatorMenu, setIndicatorMenu] = useState(false);
+  const [lineMenu, setLineMenu] = useState(false);
   const [chartVersion, setChartVersion] = useState(0);
   const [drawingOpen, setDrawingOpen] = useState(false);
 
@@ -157,10 +166,11 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
     const precision = game.round?.pricePrecision ?? 1;
     const lines: { value: number; data: TradeLineData }[] = [];
     const p = ex.position;
+    const shown = (key: string) => !view.hiddenLines.includes(key);
     if (p) {
       const color = p.side === 'long' ? COLORS.up : COLORS.down;
       const pnl = ex.unrealizedPnl();
-      lines.push({
+      if (shown('entry')) lines.push({
         value: p.entryPrice,
         data: {
           label: `${p.side === 'long' ? '롱' : '숏'} ${formatNumber(p.qty, 4)}  ${pnl >= 0 ? '+' : ''}${formatNumber(pnl)} USDT`,
@@ -170,17 +180,17 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
         },
       });
       const liq = ex.liquidationPrice();
-      if (liq && liq > 0) {
+      if (shown('liquidation') && liq && liq > 0) {
         lines.push({ value: liq, data: { label: '청산가', color: '#E8A33D', priceText: formatNumber(liq, precision), dashed: true } });
       }
-      if (p.takeProfit !== null) {
+      if (shown('takeProfit') && p.takeProfit !== null) {
         lines.push({ value: p.takeProfit, data: { label: '익절', color: COLORS.up, priceText: formatNumber(p.takeProfit, precision), dashed: true } });
       }
-      if (p.stopLoss !== null) {
+      if (shown('stopLoss') && p.stopLoss !== null) {
         lines.push({ value: p.stopLoss, data: { label: '손절', color: COLORS.down, priceText: formatNumber(p.stopLoss, precision), dashed: true } });
       }
     }
-    for (const o of ex.orders) {
+    for (const o of shown('orders') ? ex.orders : []) {
       const color = o.side === 'buy' ? COLORS.up : COLORS.down;
       lines.push({
         value: o.price,
@@ -204,7 +214,7 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
         })),
       );
     }
-  }, [game, version, chartVersion]);
+  }, [game, version, chartVersion, view.hiddenLines]);
 
   // 체결 표시
   const fillCount = game.exchange?.fills.length ?? 0;
@@ -252,6 +262,11 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
     onViewChange({ ...view, [kind]: list.includes(name) ? list.filter((n) => n !== name) : [...list, name] });
   };
 
+  const toggleLine = (key: string) => {
+    const hidden = view.hiddenLines;
+    onViewChange({ ...view, hiddenLines: hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key] });
+  };
+
   return (
     <div className={`chart-panel ${mobile ? 'mobile' : ''}`}>
       <div className="chart-toolbar">
@@ -294,6 +309,21 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
                     onChange={() => toggleIndicator('subIndicators', name)}
                   />
                   {name}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="dropdown">
+          <button className={`tf-btn ${lineMenu ? 'active' : ''}`} onClick={() => setLineMenu((v) => !v)}>
+            가격선 ▾
+          </button>
+          {lineMenu && (
+            <div className="dropdown-menu" onMouseLeave={() => setLineMenu(false)}>
+              {PRICE_LINES.map((l) => (
+                <label key={l.key} className="dropdown-item">
+                  <input type="checkbox" checked={!view.hiddenLines.includes(l.key)} onChange={() => toggleLine(l.key)} />
+                  {l.label}
                 </label>
               ))}
             </div>
