@@ -1,4 +1,4 @@
-# trading-simulation
+# BlindCandle (trading-simulation)
 
 바이낸스 BTCUSDT 무기한 선물의 과거 1분봉을 무작위 시점부터 재생하며 매매를 연습하는 훈련 앱.
 회원별로 기록을 관리하고 랭킹을 제공합니다. PC와 모바일 화면을 각각 지원합니다.

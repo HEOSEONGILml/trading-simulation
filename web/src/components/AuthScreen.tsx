@@ -34,9 +34,9 @@ export function AuthScreen({ onLogin }: { onLogin: (user: User) => void }) {
     <div className="auth-page">
       <form className="auth-card" onSubmit={submit}>
         <div className="auth-brand">
-          <span className="brand-logo">◆</span> 매매 훈련
+          <span className="brand-logo">◆</span> BlindCandle
         </div>
-        <p className="hint">BTCUSDT 무기한 선물 과거 차트로 하는 매매 연습</p>
+        <p className="hint">날짜와 가격을 가린 BTC 선물 과거 차트로 하는 매매 연습</p>
         <div className="order-tabs">
           <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => switchMode('login')}>
             로그인

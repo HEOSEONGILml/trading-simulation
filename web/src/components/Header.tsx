@@ -101,7 +101,7 @@ export function Header(props: HeaderProps) {
     <header className="header">
       <div className="brand">
         <span className="brand-logo">◆</span>
-        <span className="brand-name">매매 훈련</span>
+        <span className="brand-name">BlindCandle</span>
       </div>
       <nav className="nav">
         <button className={`nav-btn ${page === 'trade' ? 'active' : ''}`} onClick={() => onPageChange('trade')}>
