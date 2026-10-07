@@ -15,7 +15,7 @@ export interface ViewSettings {
   speed: number;
   mainIndicators: string[];
   subIndicators: string[];
-  /** 차트에서 숨긴 가격선 (entry, takeProfit, stopLoss, liquidation, orders) */
+  /** 차트에서 숨긴 가격선·마커 (entry, takeProfit, stopLoss, liquidation, orders, fills) */
   hiddenLines: string[];
 }
 
@@ -26,7 +26,7 @@ export interface Prefs {
   leverage: number;
 }
 
-export const SPEEDS = [1, 2, 3, 5, 10, 20, 30, 60, 120, 300, 600];
+export const SPEEDS = [1, 2, 3, 5, 10, 20, 30, 60, 120, 300, 600, 1200];
 
 export const HISTORY_OPTIONS = [
   { label: '6시간', minutes: 360 },

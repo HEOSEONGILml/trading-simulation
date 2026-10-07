@@ -19,6 +19,7 @@ export const PRICE_LINES = [
   { key: 'stopLoss', label: '손절' },
   { key: 'liquidation', label: '청산가' },
   { key: 'orders', label: '지정가 주문' },
+  { key: 'fills', label: 'B/S 마커' },
 ];
 
 const TRADE_GROUP = 'trade';
@@ -223,7 +224,7 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
     const ex = game.exchange;
     if (!chart) return;
     chart.removeOverlay({ groupId: FILL_GROUP });
-    if (!ex || ex.fills.length === 0) return;
+    if (!ex || ex.fills.length === 0 || view.hiddenLines.includes('fills')) return;
     chart.createOverlay(
       ex.fills.map((f) => ({
         name: 'fillMarker',
@@ -234,7 +235,7 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
         extendData: { side: f.side } satisfies FillMarkerData,
       })),
     );
-  }, [game, fillCount, chartVersion]);
+  }, [game, fillCount, chartVersion, view.hiddenLines]);
 
   // 그리기
   const startDrawing = (name: string) => {
@@ -316,7 +317,7 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
         </div>
         <div className="dropdown">
           <button className={`tf-btn ${lineMenu ? 'active' : ''}`} onClick={() => setLineMenu((v) => !v)}>
-            가격선 ▾
+            표시 ▾
           </button>
           {lineMenu && (
             <div className="dropdown-menu" onMouseLeave={() => setLineMenu(false)}>
