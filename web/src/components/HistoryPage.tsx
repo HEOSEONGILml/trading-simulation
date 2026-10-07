@@ -2,6 +2,16 @@ import { useEffect, useState } from 'react';
 import { api, type HistorySummary, type RoundRecord } from '../api.ts';
 import { formatDateTime, formatDuration, formatNumber, formatSigned, pnlClass } from '../format.ts';
 
+/** 미실현 수익/손실 시간. 집계 기능 이전의 기록은 '-' */
+function PnlTime({ profit, loss }: { profit: number | null; loss: number | null }) {
+  if (profit === null || loss === null) return <span className="muted">-</span>;
+  return (
+    <>
+      <span className="up">{formatDuration(profit * 60_000)}</span> / <span className="down">{formatDuration(loss * 60_000)}</span>
+    </>
+  );
+}
+
 export function HistoryPage({ mobile = false }: { mobile?: boolean }) {
   const [data, setData] = useState<{ summary: HistorySummary; rounds: RoundRecord[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +85,12 @@ export function HistoryPage({ mobile = false }: { mobile?: boolean }) {
           <span>총 훈련 구간</span>
           <b className="mono">{formatDuration(s.totalMinutes * 60_000)}</b>
         </div>
+        <div className="stat-card">
+          <span>미실현 수익 / 손실 시간</span>
+          <b className="mono">
+            <PnlTime profit={s.totalProfitMinutes} loss={s.totalLossMinutes} />
+          </b>
+        </div>
       </div>
 
       <h2>라운드 기록</h2>
@@ -112,6 +128,12 @@ export function HistoryPage({ mobile = false }: { mobile?: boolean }) {
                 <span>강제 청산</span>
                 <b className="mono">{r.liquidationCount}</b>
               </div>
+              <div className="m-cell wide">
+                <span>미실현 수익 / 손실</span>
+                <b>
+                  <PnlTime profit={r.profitMinutes} loss={r.lossMinutes} />
+                </b>
+              </div>
             </div>
             <div className="muted small mono">
               실제 {formatDateTime(r.realStartTime)} ~ {formatDateTime(r.realEndTime)}
@@ -129,6 +151,7 @@ export function HistoryPage({ mobile = false }: { mobile?: boolean }) {
                 <th>수익률</th>
                 <th>손익</th>
                 <th>거래 / 승률</th>
+                <th>미실현 수익 / 손실</th>
                 <th>최대 낙폭</th>
                 <th>강제 청산</th>
                 <th>가리기</th>
@@ -147,6 +170,9 @@ export function HistoryPage({ mobile = false }: { mobile?: boolean }) {
                   <td className={`mono ${pnlClass(r.endEquity - r.startEquity)}`}>{formatSigned(r.endEquity - r.startEquity)}</td>
                   <td className="mono">
                     {r.tradeCount} / {r.tradeCount ? `${formatNumber((r.winCount / r.tradeCount) * 100, 0)}%` : '-'}
+                  </td>
+                  <td>
+                    <PnlTime profit={r.profitMinutes} loss={r.lossMinutes} />
                   </td>
                   <td className="mono">{formatNumber(r.maxDrawdownPct)}%</td>
                   <td className="mono">{r.liquidationCount}</td>

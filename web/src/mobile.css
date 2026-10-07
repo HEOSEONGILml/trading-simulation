@@ -387,6 +387,9 @@
 .history-page .m-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+.m-cell.wide {
+  grid-column: 1 / -1;
+}
 /* 헤더 가격을 가리지 않도록 하단 주문 버튼 위에 표시 */
 .app.mobile .toasts {
   top: auto;

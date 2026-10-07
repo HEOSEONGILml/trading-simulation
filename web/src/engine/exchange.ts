@@ -43,6 +43,9 @@ export interface ExchangeSnapshot {
   candleCount: number;
   peakEquity: number;
   maxDrawdownPct: number;
+  /** 이전 버전에서 저장한 상태에는 없다 */
+  profitMinutes?: number;
+  lossMinutes?: number;
   nextId: number;
 }
 
@@ -69,6 +72,9 @@ export class Exchange {
   candleCount = 0;
   peakEquity = INITIAL_BALANCE;
   maxDrawdownPct = 0;
+  /** 포지션을 들고 캔들을 마감했을 때 미실현 수익/손실 상태였던 시간 (분) */
+  profitMinutes = 0;
+  lossMinutes = 0;
   private nextId = 1;
 
   constructor(lastPrice: number, time: number) {
@@ -89,6 +95,8 @@ export class Exchange {
       candleCount: this.candleCount,
       peakEquity: this.peakEquity,
       maxDrawdownPct: this.maxDrawdownPct,
+      profitMinutes: this.profitMinutes,
+      lossMinutes: this.lossMinutes,
       nextId: this.nextId,
     });
   }
@@ -105,6 +113,8 @@ export class Exchange {
     ex.candleCount = copy.candleCount;
     ex.peakEquity = copy.peakEquity;
     ex.maxDrawdownPct = copy.maxDrawdownPct;
+    ex.profitMinutes = copy.profitMinutes ?? 0;
+    ex.lossMinutes = copy.lossMinutes ?? 0;
     ex.nextId = copy.nextId;
     return ex;
   }
@@ -287,6 +297,9 @@ export class Exchange {
     this.lastPrice = c.close;
     this.time = c.time + MINUTE;
     this.candleCount++;
+    const pnl = this.unrealizedPnl();
+    if (this.position && pnl > 0) this.profitMinutes++;
+    else if (this.position && pnl < 0) this.lossMinutes++;
     this.updateDrawdown();
     return events;
   }
@@ -316,6 +329,8 @@ export class Exchange {
       winCount: closed.filter((t) => t.pnl - t.fees > 0).length,
       maxDrawdownPct: this.maxDrawdownPct,
       liquidationCount: closed.filter((t) => t.liquidated).length,
+      profitMinutes: this.profitMinutes,
+      lossMinutes: this.lossMinutes,
     };
   }
 

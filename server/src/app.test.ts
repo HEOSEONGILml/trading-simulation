@@ -32,6 +32,8 @@ const RESULT = {
   winCount: 1,
   maxDrawdownPct: 3,
   liquidationCount: 0,
+  profitMinutes: 12,
+  lossMinutes: 8,
   trades: [],
 };
 
@@ -131,6 +133,10 @@ test('라운드 진행과 회원별 기록, 랭킹', { timeout: 60_000 }, async 
   const aliceHistory = (await app.inject({ url: '/api/history', headers: alice })).json();
   assert.equal(aliceHistory.summary.roundCount, 1);
   assert.equal(aliceHistory.rounds[0].returnPct, 5);
+  assert.equal(aliceHistory.rounds[0].profitMinutes, 12);
+  assert.equal(aliceHistory.rounds[0].lossMinutes, 8);
+  assert.equal(aliceHistory.summary.totalProfitMinutes, 12);
+  assert.equal(aliceHistory.summary.totalLossMinutes, 8);
   const forbidden = await app.inject({ method: 'DELETE', url: `/api/history/${aliceHistory.rounds[0].id}`, headers: bob });
   assert.equal(forbidden.statusCode, 404);
 

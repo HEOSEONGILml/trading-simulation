@@ -67,10 +67,15 @@ export interface RoundResult {
   winCount: number;
   maxDrawdownPct: number;
   liquidationCount: number;
+  profitMinutes: number;
+  lossMinutes: number;
   trades: unknown[];
 }
 
-export interface RoundRecord extends Omit<RoundResult, 'trades'> {
+export interface RoundRecord extends Omit<RoundResult, 'trades' | 'profitMinutes' | 'lossMinutes'> {
+  /** 집계 기능 이전의 기록은 null */
+  profitMinutes: number | null;
+  lossMinutes: number | null;
   id: string;
   playedAt: number;
   realStartTime: number;
@@ -96,6 +101,8 @@ export interface HistorySummary {
   totalFees: number;
   liquidationCount: number;
   totalMinutes: number;
+  totalProfitMinutes: number;
+  totalLossMinutes: number;
 }
 
 const post = (body: unknown, method = 'POST'): RequestInit => ({ method, body: JSON.stringify(body) });

@@ -14,10 +14,15 @@ export interface RoundResultInput {
   winCount: number;
   maxDrawdownPct: number;
   liquidationCount: number;
+  profitMinutes: number;
+  lossMinutes: number;
   trades: unknown[];
 }
 
-export interface RoundRecord extends Omit<RoundResultInput, 'trades'> {
+export interface RoundRecord extends Omit<RoundResultInput, 'trades' | 'profitMinutes' | 'lossMinutes'> {
+  /** 미실현 수익/손실 시간 (분). 집계 기능 이전의 기록은 null */
+  profitMinutes: number | null;
+  lossMinutes: number | null;
   id: string;
   userId: string;
   playedAt: number;
@@ -122,6 +127,11 @@ export class Store {
     const columns = this.db.prepare('PRAGMA table_info(rounds)').all() as { name: string }[];
     if (!columns.some((c) => c.name === 'user_id')) {
       this.db.exec('ALTER TABLE rounds ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE');
+    }
+    // 미실현 수익/손실 시간은 나중에 추가된 컬럼이다
+    if (!columns.some((c) => c.name === 'profit_minutes')) {
+      this.db.exec('ALTER TABLE rounds ADD COLUMN profit_minutes INTEGER');
+      this.db.exec('ALTER TABLE rounds ADD COLUMN loss_minutes INTEGER');
     }
     this.db.exec('CREATE INDEX IF NOT EXISTS rounds_user ON rounds(user_id, played_at)');
   }
@@ -244,8 +254,8 @@ export class Store {
       .prepare(
         `INSERT INTO rounds (id, user_id, played_at, real_start_time, real_end_time, candle_count, hide_date, hide_price,
           date_offset, price_factor, start_equity, end_equity, return_pct, realized_pnl, fees, trade_count, win_count,
-          max_drawdown_pct, liquidation_count, trades_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          max_drawdown_pct, liquidation_count, profit_minutes, loss_minutes, trades_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         record.id,
@@ -267,6 +277,8 @@ export class Store {
         record.winCount,
         record.maxDrawdownPct,
         record.liquidationCount,
+        record.profitMinutes,
+        record.lossMinutes,
         JSON.stringify(record.trades),
       );
   }
@@ -365,6 +377,8 @@ function toRecord(r: Row): RoundRecord {
     winCount: r.win_count,
     maxDrawdownPct: r.max_drawdown_pct,
     liquidationCount: r.liquidation_count,
+    profitMinutes: r.profit_minutes,
+    lossMinutes: r.loss_minutes,
     trades: JSON.parse(r.trades_json),
   };
 }
@@ -389,5 +403,7 @@ export function summarize(records: RoundRecord[]) {
     totalFees: sum((r) => r.fees),
     liquidationCount: sum((r) => r.liquidationCount),
     totalMinutes: sum((r) => r.candleCount),
+    totalProfitMinutes: sum((r) => r.profitMinutes ?? 0),
+    totalLossMinutes: sum((r) => r.lossMinutes ?? 0),
   };
 }

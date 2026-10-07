@@ -177,6 +177,9 @@ export function buildApp(options: { dbPath: string; staticDir?: string }) {
       winCount: result.winCount,
       maxDrawdownPct: result.maxDrawdownPct,
       liquidationCount: result.liquidationCount,
+      // 이전 버전 클라이언트는 보내지 않는다
+      profitMinutes: Number.isFinite(result.profitMinutes) ? Math.max(0, Math.floor(result.profitMinutes)) : null,
+      lossMinutes: Number.isFinite(result.lossMinutes) ? Math.max(0, Math.floor(result.lossMinutes)) : null,
       trades: Array.isArray(result.trades) ? result.trades : [],
     };
     // 시간이 흐르지 않은 라운드는 기록하지 않는다

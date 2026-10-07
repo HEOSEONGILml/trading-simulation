@@ -28,6 +28,19 @@ describe('Exchange', () => {
     expect(ex.summary()).toMatchObject({ tradeCount: 1, winCount: 1 });
   });
 
+  it('포지션을 들고 마감한 캔들마다 미실현 수익/손실 시간을 센다', () => {
+    const ex = setup();
+    ex.onCandle(candle(100, 101, 99, 100));
+    ex.marketOrder('buy', 10);
+    ex.onCandle(candle(100, 103, 99, 102));
+    ex.onCandle(candle(102, 103, 97, 98));
+    ex.onCandle(candle(98, 101, 97, 100));
+    ex.onCandle(candle(100, 106, 99, 105));
+    expect(ex.summary()).toMatchObject({ profitMinutes: 2, lossMinutes: 1 });
+    const restored = Exchange.restore(ex.snapshot());
+    expect(restored.summary()).toMatchObject({ profitMinutes: 2, lossMinutes: 1 });
+  });
+
   it('반대 방향 주문은 포지션을 줄이고 남는 수량으로 반대 포지션을 연다', () => {
     const ex = setup();
     ex.marketOrder('buy', 10);

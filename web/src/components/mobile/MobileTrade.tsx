@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ChartView } from '../../chart/ChartView.tsx';
 import { REASON_LABEL } from '../../engine/exchange.ts';
 import type { OrderSide } from '../../engine/types.ts';
@@ -6,7 +6,7 @@ import type { Game } from '../../game/game.ts';
 import { formatDateTime, formatNumber, formatSigned, pnlClass } from '../../format.ts';
 import type { ViewSettings } from '../../settings.ts';
 import { TpSlDialog } from '../BottomPanel.tsx';
-import { AccountSummary, OrderForm, parseNumber } from '../OrderPanel.tsx';
+import { AccountSummary, OrderForm, parseNumber, type OrderDraft } from '../OrderPanel.tsx';
 
 type Tab = 'position' | 'orders' | 'fills' | 'trades' | 'account';
 
@@ -212,7 +212,16 @@ function MobileLists({ game }: { game: Game }) {
   );
 }
 
-function OrderSheet({ game, side, onSideChange, onClose }: { game: Game; side: OrderSide; onSideChange: (s: OrderSide) => void; onClose: () => void }) {
+interface OrderSheetProps {
+  game: Game;
+  side: OrderSide;
+  draft?: OrderDraft;
+  onDraftChange: (draft: OrderDraft | undefined) => void;
+  onSideChange: (s: OrderSide) => void;
+  onClose: () => void;
+}
+
+function OrderSheet({ game, side, draft, onDraftChange, onSideChange, onClose }: OrderSheetProps) {
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
@@ -230,7 +239,17 @@ function OrderSheet({ game, side, onSideChange, onClose }: { game: Game; side: O
             ✕
           </button>
         </div>
-        <OrderForm game={game} side={side} onSubmitted={onClose} />
+        <OrderForm
+          game={game}
+          side={side}
+          draft={draft}
+          onDraftChange={onDraftChange}
+          onSubmitted={() => {
+            // 주문이 들어가면 작성 내용을 비운다
+            onDraftChange(undefined);
+            onClose();
+          }}
+        />
       </div>
     </div>
   );
@@ -245,6 +264,13 @@ interface Props {
 
 export function MobileTrade({ game, version, view, onViewChange }: Props) {
   const [sheetSide, setSheetSide] = useState<OrderSide | null>(null);
+  // 주문 창을 닫았다 열어도 작성하던 내용을 유지한다 (라운드가 바뀌면 초기화)
+  const draftRef = useRef<{ roundId: string; draft: OrderDraft } | null>(null);
+  const roundId = game.round?.roundId;
+  const draft = draftRef.current && draftRef.current.roundId === roundId ? draftRef.current.draft : undefined;
+  const setDraft = (next: OrderDraft | undefined) => {
+    draftRef.current = next && roundId ? { roundId, draft: next } : null;
+  };
   const ex = game.exchange;
   const tradable = game.phase === 'running' || game.phase === 'paused';
 
@@ -262,7 +288,7 @@ export function MobileTrade({ game, version, view, onViewChange }: Props) {
           </button>
         </div>
       )}
-      {sheetSide && ex && <OrderSheet game={game} side={sheetSide} onSideChange={setSheetSide} onClose={() => setSheetSide(null)} />}
+      {sheetSide && ex && <OrderSheet game={game} side={sheetSide} draft={draft} onDraftChange={setDraft} onSideChange={setSheetSide} onClose={() => setSheetSide(null)} />}
     </main>
   );
 }

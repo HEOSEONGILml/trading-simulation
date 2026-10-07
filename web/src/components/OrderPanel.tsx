@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MAX_LEVERAGE, maxNotionalFor } from '../engine/brackets.ts';
 import { INITIAL_BALANCE, MAKER_FEE, TAKER_FEE } from '../engine/exchange.ts';
 import type { OrderSide } from '../engine/types.ts';
@@ -78,20 +78,49 @@ interface OrderFormProps {
   /** 지정하면 해당 방향 버튼 하나만 보여준다 (모바일 주문 창) */
   side?: OrderSide;
   onSubmitted?: () => void;
+  /** 이전에 작성하던 내용 (폼이 다시 열릴 때 복원) */
+  draft?: OrderDraft;
+  onDraftChange?: (draft: OrderDraft) => void;
 }
 
-export function OrderForm({ game, side, onSubmitted }: OrderFormProps) {
+export interface OrderDraft {
+  tab: 'limit' | 'market';
+  price: string;
+  size: string;
+  pct: number;
+  tpsl: boolean;
+  tp: string;
+  sl: string;
+  reduceOnly: boolean;
+}
+
+export const EMPTY_DRAFT: OrderDraft = {
+  tab: 'limit',
+  price: '',
+  size: '',
+  pct: 0,
+  tpsl: false,
+  tp: '',
+  sl: '',
+  reduceOnly: false,
+};
+
+export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraftChange }: OrderFormProps) {
   const ex = game.exchange!;
   const precision = game.round?.pricePrecision ?? 1;
-  const [tab, setTab] = useState<'limit' | 'market'>('limit');
-  const [price, setPrice] = useState('');
-  const [size, setSize] = useState('');
-  const [pct, setPct] = useState(0);
-  const [tpsl, setTpsl] = useState(false);
-  const [tp, setTp] = useState('');
-  const [sl, setSl] = useState('');
-  const [reduceOnly, setReduceOnly] = useState(false);
+  const [tab, setTab] = useState(draft.tab);
+  const [price, setPrice] = useState(draft.price);
+  const [size, setSize] = useState(draft.size);
+  const [pct, setPct] = useState(draft.pct);
+  const [tpsl, setTpsl] = useState(draft.tpsl);
+  const [tp, setTp] = useState(draft.tp);
+  const [sl, setSl] = useState(draft.sl);
+  const [reduceOnly, setReduceOnly] = useState(draft.reduceOnly);
   const [leverageOpen, setLeverageOpen] = useState(false);
+
+  useEffect(() => {
+    onDraftChange?.({ tab, price, size, pct, tpsl, tp, sl, reduceOnly });
+  }, [tab, price, size, pct, tpsl, tp, sl, reduceOnly]);
 
   const lastPrice = ex.lastPrice;
   const refPrice = tab === 'limit' ? (parseNumber(price) ?? lastPrice) : lastPrice;
