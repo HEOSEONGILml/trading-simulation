@@ -131,6 +131,20 @@ export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraf
   const cost = reduceOnly ? 0 : sizeValue / ex.leverage + sizeValue * feeRate;
   const tradable = game.phase === 'running' || game.phase === 'paused';
 
+  // 익절/손절가를 증거금 대비 수익률(%)로 환산한다. 방향은 주문 버튼이 하나면 그 방향, 아니면 입력값으로 추정
+  const tpValue = parseNumber(tp);
+  const slValue = parseNumber(sl);
+  const dir =
+    side === 'buy' ? 1
+    : side === 'sell' ? -1
+    : tpValue !== null ? (tpValue >= refPrice ? 1 : -1)
+    : slValue !== null ? (slValue <= refPrice ? 1 : -1)
+    : 1;
+  const roe = (target: number | null) =>
+    target === null || !(refPrice > 0) ? null : ((target - refPrice) / refPrice) * dir * ex.leverage * 100;
+  const tpRoe = roe(tpValue);
+  const slRoe = roe(slValue);
+
   const onPct = (value: number) => {
     setPct(value);
     const base = side === 'buy' ? maxBuy : side === 'sell' ? maxSell : Math.max(maxBuy, maxSell);
@@ -243,11 +257,21 @@ export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraf
             <input className="mono" inputMode="decimal" value={tp} onChange={(e) => setTp(e.target.value)} placeholder="선택" />
             <span className="field-unit">USDT</span>
           </div>
+          {tpRoe !== null && (
+            <div className="qty-hint">
+              {dir > 0 ? '롱' : '숏'} 기준 수익률 <span className={`mono ${pnlClass(tpRoe)}`}>{formatSigned(tpRoe)}%</span>
+            </div>
+          )}
           <div className="field">
             <span className="field-label">손절가</span>
             <input className="mono" inputMode="decimal" value={sl} onChange={(e) => setSl(e.target.value)} placeholder="선택" />
             <span className="field-unit">USDT</span>
           </div>
+          {slRoe !== null && (
+            <div className="qty-hint">
+              {dir > 0 ? '롱' : '숏'} 기준 수익률 <span className={`mono ${pnlClass(slRoe)}`}>{formatSigned(slRoe)}%</span>
+            </div>
+          )}
         </>
       )}
       <label className="check">
