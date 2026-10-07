@@ -119,7 +119,7 @@ export function registerExtensions() {
     close: '종가: ',
     volume: '거래량: ',
     turnover: '거래대금: ',
-    change: '변동: ',
+    change: '변화: ',
     second: '초',
     minute: '분',
     hour: '시간',

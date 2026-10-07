@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { dispose, init, type Chart, type DataLoaderSubscribeBarParams, type KLineData, type Period } from 'klinecharts';
+import { dispose, init, type Chart, type DataLoaderSubscribeBarParams, type KLineData, type NeighborData, type Nullable, type Period } from 'klinecharts';
 import { aggregate, bucketStart, lastAggregated, TIMEFRAMES } from '../engine/aggregate.ts';
 import { MINUTE, type Candle, type Fill } from '../engine/types.ts';
 import type { Game } from '../game/game.ts';
-import { formatNumber } from '../format.ts';
+import { formatNumber, formatSigned } from '../format.ts';
 import type { ViewSettings } from '../settings.ts';
 import { DrawingBar } from './DrawingBar.tsx';
 import { registerExtensions, type FillMarkerData, type TradeLineData } from './overlays.ts';
@@ -85,6 +85,33 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
     })!;
     chartRef.current = chart;
     chart.setOffsetRightDistance(mobile ? 40 : 80);
+    // 시고저종 뒤에 캔들의 시가 대비 종가 변화량을 붙인다
+    chart.setStyles({
+      candle: {
+        tooltip: {
+          legend: {
+            template: ({ current }: NeighborData<Nullable<KLineData>>) => {
+              const legends = [
+                { title: 'time', value: '{time}' },
+                { title: 'open', value: '{open}' },
+                { title: 'high', value: '{high}' },
+                { title: 'low', value: '{low}' },
+                { title: 'close', value: '{close}' },
+              ];
+              if (!current) return legends;
+              const diff = current.close - current.open;
+              const pct = current.open === 0 ? 0 : (diff / current.open) * 100;
+              const color = diff > 0 ? COLORS.up : diff < 0 ? COLORS.down : COLORS.textSecondary;
+              return [
+                ...legends,
+                { title: 'change', value: { text: `${formatSigned(diff, game.round?.pricePrecision ?? 2)} (${formatSigned(pct)}%)`, color } },
+                { title: 'volume', value: '{volume}' },
+              ];
+            },
+          },
+        },
+      },
+    });
     // 모바일은 화면이 좁아 시고저종 정보는 차트를 누를 때만 표시
     if (mobile) chart.setStyles({ candle: { tooltip: { showRule: 'follow_cross' } } });
     chart.setDataLoader({
