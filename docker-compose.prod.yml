@@ -3,31 +3,9 @@
 services:
   app:
     build: .
-    image: blindcandle-app
     restart: unless-stopped
-    # 스레드 계정 연결용 THREADS_APP_ID, THREADS_APP_SECRET
-    env_file:
-      - path: secrets.env
-        required: false
     volumes:
       - app-data:/data
-
-  # 매일 21시(KST) 차트 퀴즈를 스레드에 게시 (server/src/quiz/run.ts)
-  quiz:
-    # app과 같은 이미지를 쓴다 (따로 빌드하지 않음)
-    image: blindcandle-app
-    pull_policy: never
-    depends_on:
-      - app
-    restart: unless-stopped
-    command: ["node", "server/src/quiz/run.ts"]
-    env_file:
-      - path: secrets.env
-        required: false
-    volumes:
-      - app-data:/data
-    healthcheck:
-      disable: true
 
   caddy:
     image: caddy:2

@@ -1,5 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
@@ -15,9 +14,6 @@ import {
 } from './auth.ts';
 import { MINUTE } from './binance.ts';
 import { RANKING_MIN_ROUNDS, Store, summarize, type RankingSort, type RoundResultInput, type User } from './db.ts';
-import { quizAnswerPage } from './quiz/page.ts';
-import { loadState, quizDir as quizDirOf, saveState, type QuizPage } from './quiz/state.ts';
-import { authState, authorizeUrl, exchangeCode, type ThreadsApp } from './quiz/threads.ts';
 import { RoundError, Rounds, type RoundSettings } from './rounds.ts';
 
 declare module 'fastify' {
@@ -30,7 +26,7 @@ const MAX_FUTURE_BATCH = 2000;
 const MAX_SETTINGS_LENGTH = 10_000;
 const RANKING_SORTS: RankingSort[] = ['compound', 'average', 'winrate'];
 
-export function buildApp(options: { dbPath: string; staticDir?: string; threadsApp?: ThreadsApp }) {
+export function buildApp(options: { dbPath: string; staticDir?: string }) {
   // cloudflared 터널 뒤에서 실행되므로 X-Forwarded-* 헤더를 신뢰한다
   const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 10 * 1024 * 1024, trustProxy: true });
   const store = new Store(options.dbPath);
@@ -242,38 +238,6 @@ export function buildApp(options: { dbPath: string; staticDir?: string; threadsA
     const entries = store.ranking(sort).map(({ userId, ...e }) => ({ ...e, isMe: userId === user.id }));
     return { sort, minRounds: RANKING_MIN_ROUNDS, entries };
   });
-
-  // 차트 퀴즈: 문제·정답 이미지(스레드가 공개 URL로 가져간다)와 정답 페이지 (src/quiz/run.ts)
-  const quizDir = quizDirOf(options.dbPath);
-  app.get<{ Params: { file: string } }>('/quiz/:file', async (req, reply) => {
-    const { file } = req.params;
-    if (/^\d+(-answer)?\.png$/.test(file) && existsSync(join(quizDir, file))) {
-      return reply.type('image/png').header('cache-control', 'public, max-age=86400').send(readFileSync(join(quizDir, file)));
-    }
-    if (/^\d+$/.test(file) && existsSync(join(quizDir, `${file}.json`))) {
-      const page = JSON.parse(readFileSync(join(quizDir, `${file}.json`), 'utf8')) as QuizPage;
-      return reply.type('text/html; charset=utf-8').send(quizAnswerPage(page));
-    }
-    return reply.status(404).send({ error: 'Not Found' });
-  });
-
-  // 스레드 계정 연결 (운영자가 한 번 접속해 허용). 앱 테스터로 등록된 계정만 허용할 수 있다
-  const threadsApp = options.threadsApp;
-  if (threadsApp) {
-    app.get('/auth/threads/start', async (_req, reply) => reply.redirect(authorizeUrl(threadsApp)));
-    app.get<{ Querystring: { code?: string; state?: string; error_description?: string } }>(
-      '/auth/threads/callback',
-      async (req, reply) => {
-        const { code, state, error_description } = req.query;
-        if (!code || state !== authState(threadsApp)) {
-          return reply.status(400).type('text/plain; charset=utf-8').send(`연결 실패: ${error_description ?? '잘못된 요청'}`);
-        }
-        const token = await exchangeCode(threadsApp, code);
-        saveState(quizDir, { ...loadState(quizDir), threads: token });
-        return reply.type('text/plain; charset=utf-8').send('스레드 계정 연결 완료. 이 창은 닫아도 됩니다.');
-      },
-    );
-  }
 
   if (options.staticDir && existsSync(options.staticDir)) {
     app.register(fastifyStatic, { root: options.staticDir });

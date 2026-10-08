@@ -21,7 +21,6 @@ COPY server/package.json server/
 COPY web/package.json web/
 RUN npm ci --omit=dev -w server && npm cache clean --force
 COPY server/src server/src
-COPY server/assets server/assets
 COPY --from=build /app/web/dist web/dist
 RUN mkdir -p /data && chown node:node /data
 USER node
