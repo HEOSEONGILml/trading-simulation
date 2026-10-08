@@ -5,11 +5,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:miniapp": "tsc --noEmit && vite build --mode miniapp",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@apps-in-toss/web-framework": "^3.8.0",
     "klinecharts": "^10.0.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

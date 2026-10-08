@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Game } from '../../game/game.ts';
 import { formatDateTime, formatDuration, formatNumber, formatSigned, pnlClass, weekday } from '../../format.ts';
+import { MINIAPP } from '../../env.ts';
 import { SPEEDS } from '../../settings.ts';
 import { LegalLinks, type HeaderProps } from '../Header.tsx';
 
@@ -36,7 +37,7 @@ function Menu({ user, onPageChange, onChangeNickname, onLogout }: Pick<HeaderPro
           <div className="menu-scrim" onClick={() => setOpen(false)} />
           <div className="dropdown-menu right m-menu">
             <div className="dropdown-title">
-              {user.nickname} <span className="muted">({user.username})</span>
+              {user.nickname} {!MINIAPP && <span className="muted">({user.username})</span>}
             </div>
             <button className="dropdown-item" onClick={pick(() => onPageChange('trade'))}>
               트레이딩
@@ -50,9 +51,11 @@ function Menu({ user, onPageChange, onChangeNickname, onLogout }: Pick<HeaderPro
             <button className="dropdown-item" onClick={pick(onChangeNickname)}>
               닉네임 변경
             </button>
-            <button className="dropdown-item" onClick={pick(onLogout)}>
-              로그아웃
-            </button>
+            {!MINIAPP && (
+              <button className="dropdown-item" onClick={pick(onLogout)}>
+                로그아웃
+              </button>
+            )}
             <LegalLinks />
           </div>
         </>

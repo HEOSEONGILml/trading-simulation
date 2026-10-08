@@ -1,4 +1,5 @@
 import type { Candle } from './engine/types.ts';
+import { API_BASE, MINIAPP } from './env.ts';
 import type { Market } from './market.ts';
 
 type RawCandle = [number, number, number, number, number, number];
@@ -12,11 +13,36 @@ export function onUnauthorized(handler: () => void) {
   unauthorizedHandler = handler;
 }
 
+// 토스 미니앱은 쿠키 대신 Bearer 토큰을 쓴다 (iOS 웹뷰에서 서드파티 쿠키가 막힘)
+const TOKEN_KEY = 'blindcandle.token';
+
+function readToken(): string | null {
+  try {
+    return MINIAPP ? localStorage.getItem(TOKEN_KEY) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setToken(token: string | null) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // 저장소를 못 쓰면 이 실행 동안만 유지한다
+  }
+  memoryToken = token;
+}
+
+let memoryToken: string | null | undefined;
+const currentToken = () => (memoryToken !== undefined ? memoryToken : readToken());
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
-  });
+  const headers: Record<string, string> = {};
+  if (init?.body) headers['Content-Type'] = 'application/json';
+  const token = currentToken();
+  if (MINIAPP && token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(API_BASE + url, { ...init, headers });
   const body = await res.json().catch(() => ({}));
   if (res.status === 401 && !url.startsWith('/api/auth/')) unauthorizedHandler?.();
   if (!res.ok) throw new Error(body.error ?? `요청 실패 (${res.status})`);
@@ -27,6 +53,8 @@ export interface User {
   id: string;
   username: string;
   nickname: string | null;
+  /** 토스 익명 키로 만든 회원 (비밀번호 없음) */
+  toss?: boolean;
 }
 
 export type RankingSort = 'compound' | 'average' | 'winrate';
@@ -120,7 +148,17 @@ export const api = {
   markets: () => request<{ markets: Market[] }>('/api/markets'),
   signUp: (username: string, password: string) => request<{ user: User }>('/api/auth/signup', post({ username, password })),
   logIn: (username: string, password: string) => request<{ user: User }>('/api/auth/login', post({ username, password })),
-  logOut: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
+  /** 토스 미니앱: 익명 사용자 키로 회원 자동 생성·로그인 */
+  async tossLogin(anonymousKey: string) {
+    const res = await request<{ user: User; token: string }>('/api/auth/toss', post({ anonymousKey }));
+    setToken(res.token);
+    return res.user;
+  },
+  async logOut() {
+    const res = await request<{ ok: true }>('/api/auth/logout', { method: 'POST' });
+    setToken(null);
+    return res;
+  },
   deleteAccount: (password: string) => request<{ ok: true }>('/api/auth/account', post({ password }, 'DELETE')),
   setNickname: (nickname: string) => request<{ user: User }>('/api/auth/nickname', post({ nickname }, 'PUT')),
   ranking: (sort: RankingSort, market: Market) =>

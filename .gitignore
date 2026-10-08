@@ -225,5 +225,10 @@ node_modules/
 server/data/
 .idea/
 
+# 토스 미니앱 빌드 산출물
+web/dist-miniapp/
+*.ait
+.granite/
+
 # 운영 서버 DB 백업
 backups/

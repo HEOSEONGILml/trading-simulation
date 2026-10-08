@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { deleteAccount } from '../account.ts';
 import type { User } from '../api.ts';
 import type { Game } from '../game/game.ts';
+import { MINIAPP } from '../env.ts';
 import { formatDateTime, formatDuration, formatNumber, weekday } from '../format.ts';
 import { SPEEDS } from '../settings.ts';
 
@@ -48,12 +49,17 @@ export interface HeaderProps {
 export function LegalLinks() {
   return (
     <div className="dropdown-legal">
-      <a href="/terms.html" target="_blank" rel="noreferrer">
-        이용약관
-      </a>
-      <a href="/privacy.html" target="_blank" rel="noreferrer">
-        개인정보처리방침
-      </a>
+      {/* 미니앱에서는 화면 밖 링크를 두지 않는다 (약관 주소는 앱인토스 콘솔에 등록) */}
+      {!MINIAPP && (
+        <>
+          <a href="/terms.html" target="_blank" rel="noreferrer">
+            이용약관
+          </a>
+          <a href="/privacy.html" target="_blank" rel="noreferrer">
+            개인정보처리방침
+          </a>
+        </>
+      )}
       <button onClick={() => void deleteAccount()}>회원 탈퇴</button>
     </div>
   );
@@ -68,7 +74,7 @@ function UserMenu({ user, onChangeNickname, onLogout }: Pick<HeaderProps, 'user'
       </button>
       {open && (
         <div className="dropdown-menu right" onMouseLeave={() => setOpen(false)}>
-          <div className="dropdown-title">{user.username}</div>
+          {!MINIAPP && <div className="dropdown-title">{user.username}</div>}
           <button
             className="dropdown-item"
             onClick={() => {
@@ -78,9 +84,11 @@ function UserMenu({ user, onChangeNickname, onLogout }: Pick<HeaderProps, 'user'
           >
             닉네임 변경
           </button>
-          <button className="dropdown-item" onClick={onLogout}>
-            로그아웃
-          </button>
+          {!MINIAPP && (
+            <button className="dropdown-item" onClick={onLogout}>
+              로그아웃
+            </button>
+          )}
           <LegalLinks />
         </div>
       )}

@@ -12,7 +12,9 @@ import { HistoryPage } from './components/HistoryPage.tsx';
 import { OrderPanel } from './components/OrderPanel.tsx';
 import { ResultDialog } from './components/ResultDialog.tsx';
 import { SetupDialog } from './components/SetupDialog.tsx';
+import { MINIAPP } from './env.ts';
 import { Game } from './game/game.ts';
+import { miniappLogin } from './miniapp.ts';
 import { useIsMobile } from './useIsMobile.ts';
 import type { Market } from './market.ts';
 import { loadPrefs, savePrefs, type Prefs, type SetupSettings, type ViewSettings } from './settings.ts';
@@ -21,6 +23,7 @@ import { loadPrefs, savePrefs, type Prefs, type SetupSettings, type ViewSettings
 export function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [editingNickname, setEditingNickname] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<{ userId: string; prefs: Prefs } | null>(null);
   const playerId = user?.nickname ? user.id : null;
 
@@ -36,6 +39,23 @@ export function App() {
   }, [playerId]);
 
   useEffect(() => {
+    if (MINIAPP) {
+      // 가입·로그인 화면 없이 토스 익명 사용자 키로 바로 시작한다. 토큰이 만료되면 조용히 다시 로그인한다
+      const login = () =>
+        miniappLogin().then(
+          (u) => {
+            setLoginError(null);
+            setUser(u);
+          },
+          (err: Error) => setLoginError(err.message),
+        );
+      api
+        .me()
+        .then((res) => (res.user ? setUser(res.user) : login()))
+        .catch(login);
+      onUnauthorized(() => void login());
+      return;
+    }
     api
       .me()
       .then((res) => setUser(res.user))
@@ -43,7 +63,19 @@ export function App() {
     onUnauthorized(() => setUser(null));
   }, []);
 
-  if (user === undefined) return <div className="auth-page muted">불러오는 중…</div>;
+  if (loginError) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <p className="hint center">{loginError}</p>
+          <button className="btn btn-primary btn-block" onClick={() => window.location.reload()}>
+            다시 시도
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (user === undefined || (MINIAPP && user === null)) return <div className="auth-page muted">불러오는 중…</div>;
   if (user === null) return <AuthScreen onLogin={setUser} />;
   if (!user.nickname) return <NicknameDialog user={user} onSaved={setUser} />;
   if (prefs?.userId !== user.id) return <div className="auth-page muted">설정 불러오는 중…</div>;
