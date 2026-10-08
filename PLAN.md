@@ -143,5 +143,10 @@
 ## 12. 이번 주 할 일
 
 1. 앱인토스 콘솔 가입 (REQUEST R9)
-2. 미니앱 전환 작업 (1단계, Claude)
+2. 미니앱 전환 작업 (1단계, Claude) — **다음 세션은 여기서 시작**. 순서:
+   1. 서버: 토스 익명 사용자 키(`User.getAnonymousKey()`)로 회원 만들기·로그인, 쿠키 대신 Bearer 토큰 세션, CORS에 `https://{appName}.apps.tossmini.com`, `https://{appName}.private-apps.tossmini.com` 허용
+   2. 웹: 미니앱 빌드 모드(API 주소 https://blindcandle.com, 토큰 저장), 미니앱에서는 가입·로그인 화면 없이 바로 시작(닉네임 자동, 나중에 변경), 외부 링크 제거
+   3. 라이트 모드 테마, 토스 내비게이션 바
+   4. `@apps-in-toss/web-framework` 설치, `granite.config.ts`, 번들(.ait) 빌드 → R9 완료 후 샌드박스 앱 테스트
 3. 콘솔 가입 후 토스에 데이터 사용과 심사 기준 문의 (REQUEST R10)
+4. 토스증권 키(R11)를 받으면 개발 환경에서 실제 데이터로 주식 섹션 확인
