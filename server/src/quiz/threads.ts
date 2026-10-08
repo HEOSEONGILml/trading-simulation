@@ -1,6 +1,8 @@
 // 스레드 게시: 이미지 컨테이너를 만든 뒤 게시한다. 정답 부분은 text_entities 스포일러로 가린다
 // https://developers.facebook.com/documentation/threads/create-posts/spoilers
 
+import { createHash } from 'node:crypto';
+
 const API = 'https://graph.threads.net/v1.0';
 const REFRESH_URL = 'https://graph.threads.net/refresh_access_token';
 /** 장기 토큰은 60일 동안 유효하다. 게시할 때 7일이 지났으면 미리 갱신한다 */
@@ -17,6 +19,48 @@ async function call(url: string, params: Record<string, string>, method: 'GET' |
   const json = (await res.json()) as Record<string, unknown>;
   if (!res.ok) throw new Error(`Threads API ${res.status}: ${JSON.stringify(json)}`);
   return json;
+}
+
+// 계정 연결: 사용자가 /auth/threads/start 에서 허용하면 콜백에서 장기 토큰(60일)으로 바꿔 저장한다
+// https://developers.facebook.com/docs/threads/get-started/get-access-tokens-and-permissions
+
+export interface ThreadsApp {
+  appId: string;
+  appSecret: string;
+  redirectUri: string;
+}
+
+/** 콜백 위조 방지용. 앱 시크릿을 아는 서버만 만들 수 있는 값 */
+export function authState(app: ThreadsApp) {
+  return createHash('sha256').update(`threads-auth:${app.appSecret}`).digest('hex').slice(0, 32);
+}
+
+export function authorizeUrl(app: ThreadsApp) {
+  const q = new URLSearchParams({
+    client_id: app.appId,
+    redirect_uri: app.redirectUri,
+    scope: 'threads_basic,threads_content_publish',
+    response_type: 'code',
+    state: authState(app),
+  });
+  return `https://threads.net/oauth/authorize?${q}`;
+}
+
+export async function exchangeCode(app: ThreadsApp, code: string): Promise<ThreadsToken> {
+  const short = await call('https://graph.threads.net/oauth/access_token', {
+    client_id: app.appId,
+    client_secret: app.appSecret,
+    grant_type: 'authorization_code',
+    redirect_uri: app.redirectUri,
+    // 리디렉션 때 끝에 붙는 #_ 는 코드가 아니다
+    code: code.replace(/#_$/, ''),
+  });
+  const long = await call(
+    'https://graph.threads.net/access_token',
+    { grant_type: 'th_exchange_token', client_secret: app.appSecret, access_token: String(short.access_token) },
+    'GET',
+  );
+  return { token: String(long.access_token), refreshedAt: Date.now() };
 }
 
 export async function refreshIfOld(t: ThreadsToken): Promise<ThreadsToken> {

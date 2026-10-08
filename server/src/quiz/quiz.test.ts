@@ -69,3 +69,26 @@ test('퀴즈 이미지는 번호.png 이름만 공개한다', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('스레드 계정 연결은 설정이 있을 때만 열리고, 위조된 콜백은 거절한다', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'quiz-'));
+  const threadsApp = { appId: '123', appSecret: 'secret', redirectUri: 'https://blindcandle.com/auth/threads/callback' };
+  const off = buildApp({ dbPath: join(dir, 'off.db') });
+  const on = buildApp({ dbPath: join(dir, 'on.db'), threadsApp });
+  try {
+    assert.equal((await off.inject({ url: '/auth/threads/start' })).statusCode, 404);
+    const start = await on.inject({ url: '/auth/threads/start' });
+    assert.equal(start.statusCode, 302);
+    const to = new URL(start.headers.location as string);
+    assert.equal(to.origin + to.pathname, 'https://threads.net/oauth/authorize');
+    assert.equal(to.searchParams.get('client_id'), '123');
+    assert.equal(to.searchParams.get('redirect_uri'), threadsApp.redirectUri);
+    assert.equal(to.searchParams.get('scope'), 'threads_basic,threads_content_publish');
+    const forged = await on.inject({ url: '/auth/threads/callback?code=abc&state=wrong' });
+    assert.equal(forged.statusCode, 400);
+  } finally {
+    await off.close();
+    await on.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

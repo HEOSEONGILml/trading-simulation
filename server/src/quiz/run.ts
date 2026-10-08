@@ -3,38 +3,23 @@
 //   node src/quiz/run.ts --now     지금 바로 한 번 게시
 //   node src/quiz/run.ts           매일 POST_HOUR_KST 시에 게시 (운영 서버의 quiz 컨테이너)
 //
-// 환경 변수 (deploy/secrets.env): THREADS_TOKEN, X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET
+// 환경 변수 (deploy/secrets.env): THREADS_TOKEN(선택, 보통은 /auth/threads/start 로 연결), X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET
 // 둘 중 설정된 곳에만 올린다. 이미지는 앱이 /quiz/<번호>.png 로 공개한다 (스레드는 공개 URL이 필요)
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeQuiz, threadsText, xTexts } from './quiz.ts';
-import { postThreads, refreshIfOld, type ThreadsToken } from './threads.ts';
+import { loadState as load, quizDir, saveState as save, type QuizState } from './state.ts';
+import { postThreads, refreshIfOld } from './threads.ts';
 import { postX, type XCredentials } from './x.ts';
 
 const POST_HOUR_KST = 21;
 const SITE = process.env.SITE_URL ?? 'https://blindcandle.com';
 const dbPath = process.env.DB_PATH ?? fileURLToPath(new URL('../../data/results.db', import.meta.url));
-export const QUIZ_DIR = join(dirname(dbPath), 'quiz');
-const STATE_FILE = join(QUIZ_DIR, 'state.json');
-
-interface State {
-  count: number;
-  /** 마지막으로 게시한 날 (KST, YYYY-MM-DD). 재시작해도 하루 두 번 올리지 않는다 */
-  lastPostedDay?: string;
-  threads?: ThreadsToken;
-  log: { number: number; at: string; threads?: string; x?: string; error?: string }[];
-}
-
-function loadState(): State {
-  if (!existsSync(STATE_FILE)) return { count: 0, log: [] };
-  return JSON.parse(readFileSync(STATE_FILE, 'utf8')) as State;
-}
-
-function saveState(s: State) {
-  writeFileSync(STATE_FILE, JSON.stringify(s, null, 2));
-}
+const QUIZ_DIR = quizDir(dbPath);
+const loadState = () => load(QUIZ_DIR);
+const saveState = (s: QuizState) => save(QUIZ_DIR, s);
 
 function kstDay(ms = Date.now()) {
   return new Date(ms + 9 * 3600_000).toISOString().slice(0, 10);
@@ -62,7 +47,7 @@ async function runOnce(dry: boolean) {
     return;
   }
 
-  const entry: State['log'][number] = { number, at: new Date().toISOString() };
+  const entry: QuizState['log'][number] = { number, at: new Date().toISOString() };
   const errors: string[] = [];
 
   const initialToken = process.env.THREADS_TOKEN;
