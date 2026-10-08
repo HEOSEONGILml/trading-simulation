@@ -41,10 +41,13 @@ test('주식 라운드는 종목을 끝날 때까지 숨기고, 끝나면 공개
     const round = created.json();
     assert.equal(round.market, 'kr');
     assert.equal(round.currency, 'KRW');
-    assert.equal(round.pricePrecision, 0);
+    // 가린 가격이 실제보다 작으면 원화도 소수 자릿수가 생길 수 있다
+    assert.ok(Number.isInteger(round.pricePrecision) && round.pricePrecision >= 0 && round.pricePrecision <= 4);
     assert.equal(round.history.length, 120);
     const codes = Object.keys(STOCKS.kr);
-    const leaks = (body: string) => codes.some((code) => body.includes(code)) || Object.values(STOCKS.kr).some((n) => body.includes(n));
+    // 6자리 코드는 시각, 가격 숫자 안에 우연히 들어 있을 수 있어서 따옴표로 감싼 값과 symbol 필드만 본다
+    const leaks = (body: string) =>
+      body.includes('"symbol"') || codes.some((code) => body.includes(`"${code}"`)) || Object.values(STOCKS.kr).some((n) => body.includes(n));
     assert.ok(!leaks(created.body), '시작 응답에 종목이 보이면 안 된다');
     const resumed = await app.inject({ url: '/api/rounds/active', headers });
     assert.ok(!leaks(resumed.body), '이어하기 응답에 종목이 보이면 안 된다');
