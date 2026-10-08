@@ -6,9 +6,9 @@ cd "$(dirname "$0")/.."
 source deploy/.env
 KEY="${SSH_KEY:-$HOME/.ssh/trading_sim_deploy}"
 
-if grep -rl '{{' web/public >/dev/null; then
+if grep -rlI '{{' web/public >/dev/null; then
   echo "web/public 에 채우지 않은 자리표시자({{...}})가 있습니다:" >&2
-  grep -rn '{{' web/public >&2
+  grep -rnI '{{' web/public >&2
   exit 1
 fi
 
