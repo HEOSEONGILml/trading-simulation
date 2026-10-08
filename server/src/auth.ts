@@ -30,6 +30,7 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  if (!stored.startsWith('scrypt$')) return false; // 토스 익명 키 회원은 비밀번호 로그인 불가
   const [, saltB64, hashB64] = stored.split('$');
   const expected = Buffer.from(hashB64, 'base64');
   const actual = await scryptAsync(password, Buffer.from(saltB64, 'base64'), expected.length);
@@ -68,6 +69,36 @@ export async function logIn(store: Store, username: unknown, password: unknown):
   return user;
 }
 
+export const TOSS_NO_PASSWORD = '!';
+const TOSS_KEY_RE = /^[A-Za-z0-9_\-=+/.]{8,200}$/;
+
+export const isTossUser = (user: User) => user.passwordHash === TOSS_NO_PASSWORD;
+
+/**
+ * 토스 미니앱: 익명 사용자 키(User.getAnonymousKey()의 hash)로 회원을 찾거나 자동으로 만든다.
+ * 닉네임은 자동으로 정해 주고, 나중에 바꿀 수 있다.
+ */
+export function tossLogin(store: Store, tossKey: unknown): { user: User; created: boolean } {
+  if (typeof tossKey !== 'string' || !TOSS_KEY_RE.test(tossKey)) throw new AuthError('토스 사용자 키가 올바르지 않습니다.');
+  const found = store.findUserByTossKey(tossKey);
+  if (found) return { user: found, created: false };
+  let nickname: string | null = null;
+  for (let i = 0; i < 20 && !nickname; i++) {
+    const candidate = `연습생${String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')}`;
+    if (!store.nicknameTaken(candidate, '')) nickname = candidate;
+  }
+  const id = randomUUID();
+  const user: User = {
+    id,
+    username: `toss_${id.replaceAll('-', '').slice(0, 16)}`,
+    nickname,
+    passwordHash: TOSS_NO_PASSWORD,
+    createdAt: Date.now(),
+  };
+  store.createTossUser(user, tossKey);
+  return { user, created: true };
+}
+
 export function createSession(store: Store, userId: string): { token: string; expiresAt: number } {
   const token = randomBytes(32).toString('base64url');
   const expiresAt = Date.now() + SESSION_TTL;
@@ -95,4 +126,18 @@ export class AttemptLimiter {
   }
 }
 
-export const publicUser = (user: User) => ({ id: user.id, username: user.username, nickname: user.nickname });
+export const publicUser = (user: User) => ({
+  id: user.id,
+  username: user.username,
+  nickname: user.nickname,
+  toss: isTossUser(user),
+});
+
+/** 토스 미니앱이 API를 부를 수 있는 출처 (https://{appName}.apps.tossmini.com, ...private-apps.tossmini.com) */
+export function tossOrigins(appName: string): string[] {
+  return [`https://${appName}.apps.tossmini.com`, `https://${appName}.private-apps.tossmini.com`];
+}
+
+export function bearerToken(header: unknown): string | undefined {
+  return typeof header === 'string' && /^Bearer\s+\S+$/i.test(header) ? header.split(/\s+/)[1] : undefined;
+}

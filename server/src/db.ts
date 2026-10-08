@@ -44,6 +44,7 @@ export interface User {
   id: string;
   username: string;
   nickname: string | null;
+  /** 토스 익명 키 회원은 '!' (어떤 비밀번호와도 일치하지 않음) */
   passwordHash: string;
   createdAt: number;
 }
@@ -156,6 +157,23 @@ export class Store {
       this.db.exec("ALTER TABLE active_rounds ADD COLUMN symbol TEXT NOT NULL DEFAULT 'BTCUSDT'");
     }
     this.db.exec('CREATE INDEX IF NOT EXISTS rounds_user ON rounds(user_id, played_at)');
+    // 토스 미니앱 회원: 토스 익명 사용자 키. 기존 회원은 null
+    const userColumns = this.db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+    if (!userColumns.some((c) => c.name === 'toss_key')) {
+      this.db.exec('ALTER TABLE users ADD COLUMN toss_key TEXT');
+    }
+    this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_toss_key ON users(toss_key) WHERE toss_key IS NOT NULL');
+  }
+
+  findUserByTossKey(tossKey: string): User | undefined {
+    const row = this.db.prepare('SELECT * FROM users WHERE toss_key = ?').get(tossKey) as Row | undefined;
+    return row && toUser(row);
+  }
+
+  createTossUser(user: User, tossKey: string) {
+    this.db
+      .prepare('INSERT INTO users (id, username, nickname, password_hash, created_at, toss_key) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(user.id, user.username, user.nickname, user.passwordHash, user.createdAt, tossKey);
   }
 
   close() {

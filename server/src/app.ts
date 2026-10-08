@@ -6,10 +6,14 @@ import {
   AttemptLimiter,
   AuthError,
   SESSION_COOKIE,
+  bearerToken,
   createSession,
+  isTossUser,
   logIn,
   publicUser,
   signUp,
+  tossLogin,
+  tossOrigins,
   validateNickname,
 } from './auth.ts';
 import { MINUTE } from './binance.ts';
@@ -29,7 +33,16 @@ const MAX_SETTINGS_LENGTH = 10_000;
 const RANKING_SORTS: RankingSort[] = ['compound', 'average', 'winrate'];
 
 /** sources: 라운드를 열 수 있는 시장. 기본은 코인만 (주식은 토스 허락 후 index.ts 에서 켠다) */
-export function buildApp(options: { dbPath: string; staticDir?: string; sources?: Partial<Record<Market, MarketSource>> }) {
+export function buildApp(options: {
+  dbPath: string;
+  staticDir?: string;
+  sources?: Partial<Record<Market, MarketSource>>;
+  /** 토스 미니앱 appName (앱인토스 콘솔에서 정한 이름). 기본 blindcandle */
+  tossAppName?: string;
+  /** CORS로 추가 허용할 출처 (개발용 등) */
+  extraCorsOrigins?: string[];
+}) {
+  const corsOrigins = new Set([...tossOrigins(options.tossAppName ?? 'blindcandle'), ...(options.extraCorsOrigins ?? [])]);
   // cloudflared 터널 뒤에서 실행되므로 X-Forwarded-* 헤더를 신뢰한다
   const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 10 * 1024 * 1024, trustProxy: true });
   const store = new Store(options.dbPath);
@@ -48,8 +61,23 @@ export function buildApp(options: { dbPath: string; staticDir?: string; sources?
     return reply.status(status).send({ error: status >= 500 ? '서버 오류가 발생했습니다.' : (err as Error).message });
   });
 
+  // 토스 미니앱(다른 출처)에서 Bearer 토큰으로 호출한다. 쿠키를 쓰지 않으므로 credentials 는 허용하지 않는다
+  app.addHook('onRequest', async (req, reply) => {
+    const origin = req.headers.origin;
+    if (!origin || !corsOrigins.has(origin)) return;
+    reply.header('access-control-allow-origin', origin).header('vary', 'Origin');
+    if (req.method === 'OPTIONS') {
+      return reply
+        .header('access-control-allow-methods', 'GET,POST,PUT,DELETE,OPTIONS')
+        .header('access-control-allow-headers', 'authorization,content-type')
+        .header('access-control-max-age', '86400')
+        .status(204)
+        .send();
+    }
+  });
+
   app.addHook('onRequest', async (req) => {
-    const token = req.cookies[SESSION_COOKIE];
+    const token = bearerToken(req.headers.authorization) ?? req.cookies[SESSION_COOKIE];
     req.user = token ? (store.findSessionUser(token) ?? null) : null;
   });
 
@@ -100,8 +128,17 @@ export function buildApp(options: { dbPath: string; staticDir?: string; sources?
     return { user: publicUser(user) };
   });
 
+  /** 토스 미니앱: 익명 사용자 키로 회원 자동 생성·로그인. 쿠키 대신 토큰을 응답으로 준다 */
+  app.post<{ Body: { anonymousKey?: unknown } }>('/api/auth/toss', async (req) => {
+    limiter.check(clientIp(req));
+    const { user, created } = tossLogin(store, req.body?.anonymousKey);
+    if (created) store.logEvent(user.id, 'signup', user.createdAt);
+    const { token, expiresAt } = createSession(store, user.id);
+    return { user: publicUser(user), token, expiresAt };
+  });
+
   app.post('/api/auth/logout', async (req, reply) => {
-    const token = req.cookies[SESSION_COOKIE];
+    const token = bearerToken(req.headers.authorization) ?? req.cookies[SESSION_COOKIE];
     if (token) store.deleteSession(token);
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
     return { ok: true };
@@ -111,10 +148,13 @@ export function buildApp(options: { dbPath: string; staticDir?: string; sources?
   app.delete<{ Body: { password?: unknown } }>('/api/auth/account', async (req, reply) => {
     const user = requireUser(req);
     limiter.check(clientIp(req));
-    const ok = await logIn(store, user.username, req.body?.password).then(
-      () => true,
-      () => false,
-    );
+    // 토스 익명 키 회원은 비밀번호가 없다. 토큰 세션으로 본인 확인을 갈음한다
+    const ok =
+      isTossUser(user) ||
+      (await logIn(store, user.username, req.body?.password).then(
+        () => true,
+        () => false,
+      ));
     if (!ok) throw new AuthError('비밀번호가 올바르지 않습니다.');
     store.deleteUser(user.id);
     reply.clearCookie(SESSION_COOKIE, { path: '/' });

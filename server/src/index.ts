@@ -25,6 +25,10 @@ if (STOCKS_ENABLED === '1' && TOSSINVEST_CLIENT_ID && TOSSINVEST_CLIENT_SECRET) 
   sources.us = fakeStockSource('us');
 }
 
-const app = buildApp({ dbPath, staticDir, sources });
+// 토스 미니앱 appName (콘솔에서 확정되면 TOSS_APP_NAME 으로 지정). CORS_EXTRA_ORIGINS: 쉼표로 구분한 추가 출처
+const tossAppName = process.env.TOSS_APP_NAME || 'blindcandle';
+const extraCorsOrigins = (process.env.CORS_EXTRA_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+
+const app = buildApp({ dbPath, staticDir, sources, tossAppName, extraCorsOrigins });
 await app.listen({ port: PORT, host: HOST });
 console.log(`서버 실행 중: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} (시장: ${Object.keys(sources).join(', ')})`);
