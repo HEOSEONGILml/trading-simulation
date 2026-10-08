@@ -32,8 +32,9 @@
 
 https://blindcandle.com
 
-[스크린샷: 매매 화면]
-[스크린샷: 라운드 결과]
+[이미지 첨부: marketing/shots/01-trading.png (매매 화면)]
+[이미지 첨부: marketing/shots/02-result.png (라운드 결과, 실제 날짜와 가격 공개)]
+[이미지 첨부: marketing/shots/03-mobile.png (모바일)]
 
 실제 돈은 전혀 안 오가고, 투자 권유도 아닙니다.
 써보시고 **불편한 점, 이상한 점, 다시 쓸 것 같은지** 댓글로 남겨주시면 바로 고칩니다.
