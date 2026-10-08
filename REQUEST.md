@@ -2,39 +2,29 @@
 
 Claude가 혼자 할 수 없는 일(결제, 계정 가입, 본인 명의 신고, 본인 이름으로 하는 게시 등)을 여기에 적습니다.
 처리한 뒤 `상태`를 `완료`로 바꾸고, 결과(발급된 키, 주소, 답변 등)를 `결과`에 적어 주세요.
-위에서부터 순서대로 처리하면 됩니다. 남은 두 건을 합쳐 25분 정도, 비용은 월 $7(서버) + 연 2만원 내외(도메인)입니다.
+남은 일은 한 건(10분 정도, 연 $15 내외)입니다.
 
 ## 진행 중
 
-### R3. 운영 서버 만들기 (15분, 월 $7)
-- 요청일: 2026-10-07
-- 이유: 지금은 재시작할 때마다 주소가 바뀌어서 사람들에게 링크를 줄 수 없습니다. 바이낸스 접속이 되는 서울 리전에 서버를 둡니다.
+### R4. 도메인 구매와 연결 (10분, 연 $15 내외)
+- 요청일: 2026-10-07 (2026-10-08 Lightsail에서 사는 것으로 변경)
+- 이유: 커뮤니티에 올릴 고정 주소가 필요합니다. 서버와 같은 AWS 계정에서 사면 결제와 DNS 관리가 한곳에 모입니다.
 - 할 일:
-  1. https://lightsail.aws.amazon.com 에 AWS 계정으로 로그인 (없으면 가입, 카드 등록 필요)
-  2. **Create instance** → 리전 **Seoul (ap-northeast-2)** → 플랫폼 **Linux/Unix** → **OS Only** → **Ubuntu 24.04 LTS** → 요금제 **$7 USD (1 GB RAM)** → 이름 `trading-sim` → Create
-  3. 만든 인스턴스 → **Networking** 탭 → **Attach static IP** (고정 IP, 인스턴스에 붙어 있으면 무료)
-  4. 같은 **Networking** 탭 → IPv4 Firewall → **Add rule** → **HTTPS** 추가 (22, 80은 기본으로 열려 있음)
-  5. **Connect using SSH** (브라우저 터미널) 를 눌러서 아래 한 줄을 붙여넣고 엔터:
-     ```
-     echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuVzpcViYmCmDc/uwYeFTZhUxfRFpylmui6skHpAYjC trading-sim-deploy' >> ~/.ssh/authorized_keys
-     ```
-- 상태: 대기
-- 결과: (고정 IP 주소)
-
-### R4. 도메인 구매와 연결 (10분, 연 2만원 내외)
-- 요청일: 2026-10-07
-- 이유: 커뮤니티에 올릴 고정 주소가 필요합니다.
-- 할 일:
-  1. 가비아(gabia.com) 등에서 아래 후보 중 살 수 있는 첫 번째를 구매 (서비스 이름: **BlindCandle**)
+  1. https://lightsail.aws.amazon.com → 왼쪽 메뉴 **Domains & DNS** → **Register domain**
+  2. 아래 후보 중 살 수 있는 첫 번째를 검색해서 구매 (서비스 이름: **BlindCandle**, 자동 갱신 켜 둠)
      - `blindcandle.com` → `chartblind.com` → `rektgym.com`
-     - 2026-10-07 기준 세 주소 모두 DNS 등록 기록이 없어 구매 가능할 가능성이 높습니다 (blindchart.com, chartdrill.com, chartgym.com 등은 이미 등록되어 있어 제외)
-  2. 도메인 DNS 관리에서 A 레코드 2개 추가 (값은 R3의 고정 IP):
-     - 호스트 `@` → 고정 IP
-     - 호스트 `www` → 고정 IP
+  3. 등록 확인 메일이 오면 메일 안의 링크를 눌러 이메일 인증 (인증하지 않으면 15일 뒤 도메인이 정지됩니다)
+  4. 등록이 끝나면(보통 몇 분, 길면 하루) **Domains & DNS**에 생긴 DNS 영역을 열고 **Add assignment** 두 번:
+     - 서브도메인 비워 둠(루트) → 인스턴스 `trading-sim`
+     - `www` → 인스턴스 `trading-sim`
 - 상태: 대기
 - 결과: (구매한 도메인)
 
 ## 완료
+
+### R3. 운영 서버 만들기
+- 상태: 완료 (2026-10-08)
+- 결과: 고정 IP 43.201.119.112. Docker 설치와 배포 완료. 도메인 전까지 임시 주소 https://43-201-119-112.sslip.io 로 운영 중
 
 ### R1. 웹 검색 허용
 - 상태: 완료 (2026-10-07)
