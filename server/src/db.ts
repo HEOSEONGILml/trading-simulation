@@ -3,6 +3,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { Market } from './markets/types.ts';
 
 export interface RoundResultInput {
   candleCount: number;
@@ -33,6 +34,9 @@ export interface RoundRecord extends Omit<RoundResultInput, 'trades' | 'profitMi
   returnPct: number;
   dateOffset: number;
   priceFactor: number;
+  /** 기존 기록(코인만 있던 때)은 coin, BTCUSDT */
+  market: Market;
+  symbol: string;
   trades: unknown[];
 }
 
@@ -48,7 +52,9 @@ export interface User {
 export interface ActiveRound {
   id: string;
   userId: string;
-  settings: { rangeStart: number; rangeEnd: number; historyMinutes: number; hideDate: boolean; hidePrice: boolean };
+  settings: { market: Market; rangeStart: number; rangeEnd: number; historyMinutes: number; hideDate: boolean; hidePrice: boolean };
+  /** 가린 종목. 라운드가 끝날 때까지 클라이언트에 보내지 않는다 */
+  symbol: string;
   realStartTime: number;
   dateOffset: number;
   priceFactor: number;
@@ -139,6 +145,15 @@ export class Store {
     if (!columns.some((c) => c.name === 'profit_minutes')) {
       this.db.exec('ALTER TABLE rounds ADD COLUMN profit_minutes INTEGER');
       this.db.exec('ALTER TABLE rounds ADD COLUMN loss_minutes INTEGER');
+    }
+    // 주식 시장이 추가되기 전의 기록과 진행 중인 라운드는 모두 코인이다
+    if (!columns.some((c) => c.name === 'market')) {
+      this.db.exec("ALTER TABLE rounds ADD COLUMN market TEXT NOT NULL DEFAULT 'coin'");
+      this.db.exec("ALTER TABLE rounds ADD COLUMN symbol TEXT NOT NULL DEFAULT 'BTCUSDT'");
+    }
+    const activeColumns = this.db.prepare('PRAGMA table_info(active_rounds)').all() as { name: string }[];
+    if (!activeColumns.some((c) => c.name === 'symbol')) {
+      this.db.exec("ALTER TABLE active_rounds ADD COLUMN symbol TEXT NOT NULL DEFAULT 'BTCUSDT'");
     }
     this.db.exec('CREATE INDEX IF NOT EXISTS rounds_user ON rounds(user_id, played_at)');
   }
@@ -278,14 +293,15 @@ export class Store {
     this.db.prepare('DELETE FROM active_rounds WHERE user_id = ?').run(round.userId);
     this.db
       .prepare(
-        `INSERT INTO active_rounds (id, user_id, settings_json, real_start_time, date_offset, price_factor, price_precision,
+        `INSERT INTO active_rounds (id, user_id, settings_json, symbol, real_start_time, date_offset, price_factor, price_precision,
           created_at, state_json, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         round.id,
         round.userId,
         JSON.stringify(round.settings),
+        round.symbol,
         round.realStartTime,
         round.dateOffset,
         round.priceFactor,
@@ -325,8 +341,8 @@ export class Store {
       .prepare(
         `INSERT INTO rounds (id, user_id, played_at, real_start_time, real_end_time, candle_count, hide_date, hide_price,
           date_offset, price_factor, start_equity, end_equity, return_pct, realized_pnl, fees, trade_count, win_count,
-          max_drawdown_pct, liquidation_count, profit_minutes, loss_minutes, trades_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          max_drawdown_pct, liquidation_count, profit_minutes, loss_minutes, trades_json, market, symbol)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         record.id,
@@ -351,6 +367,8 @@ export class Store {
         record.profitMinutes,
         record.lossMinutes,
         JSON.stringify(record.trades),
+        record.market,
+        record.symbol,
       );
   }
 
@@ -425,7 +443,8 @@ function toActiveRound(r: Row): ActiveRound {
   return {
     id: r.id,
     userId: r.user_id,
-    settings: JSON.parse(r.settings_json),
+    settings: { market: 'coin', ...JSON.parse(r.settings_json) },
+    symbol: r.symbol,
     realStartTime: r.real_start_time,
     dateOffset: r.date_offset,
     priceFactor: r.price_factor,
@@ -458,6 +477,8 @@ function toRecord(r: Row): RoundRecord {
     liquidationCount: r.liquidation_count,
     profitMinutes: r.profit_minutes,
     lossMinutes: r.loss_minutes,
+    market: r.market,
+    symbol: r.symbol,
     trades: JSON.parse(r.trades_json),
   };
 }

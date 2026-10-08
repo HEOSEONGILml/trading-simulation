@@ -14,6 +14,8 @@ import {
 } from './auth.ts';
 import { MINUTE } from './binance.ts';
 import { RANKING_MIN_ROUNDS, Store, summarize, type RankingSort, type RoundResultInput, type User } from './db.ts';
+import { coinSource } from './markets/coin.ts';
+import { MARKETS, type Market, type MarketSource } from './markets/types.ts';
 import { RoundError, Rounds, type RoundSettings } from './rounds.ts';
 
 declare module 'fastify' {
@@ -26,11 +28,12 @@ const MAX_FUTURE_BATCH = 2000;
 const MAX_SETTINGS_LENGTH = 10_000;
 const RANKING_SORTS: RankingSort[] = ['compound', 'average', 'winrate'];
 
-export function buildApp(options: { dbPath: string; staticDir?: string }) {
+/** sources: 라운드를 열 수 있는 시장. 기본은 코인만 (주식은 토스 허락 후 index.ts 에서 켠다) */
+export function buildApp(options: { dbPath: string; staticDir?: string; sources?: Partial<Record<Market, MarketSource>> }) {
   // cloudflared 터널 뒤에서 실행되므로 X-Forwarded-* 헤더를 신뢰한다
   const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 10 * 1024 * 1024, trustProxy: true });
   const store = new Store(options.dbPath);
-  const rounds = new Rounds(store);
+  const rounds = new Rounds(store, options.sources ?? { coin: coinSource });
   const limiter = new AttemptLimiter();
 
   app.addHook('onClose', async () => store.close());
@@ -143,13 +146,16 @@ export function buildApp(options: { dbPath: string; staticDir?: string }) {
 
   // ---------- 라운드 ----------
 
+  /** 지금 라운드를 열 수 있는 시장 (나머지는 화면에서 "준비 중") */
+  app.get('/api/markets', async () => ({ markets: rounds.markets() }));
+
   app.post<{ Body: RoundSettings }>('/api/rounds', async (req) => {
     const user = requirePlayer(req);
-    const { rangeStart, rangeEnd, historyMinutes, hideDate, hidePrice } = req.body ?? ({} as RoundSettings);
-    if (![rangeStart, rangeEnd, historyMinutes].every(Number.isFinite)) {
+    const { market = 'coin', rangeStart, rangeEnd, historyMinutes, hideDate, hidePrice } = req.body ?? ({} as RoundSettings);
+    if (![rangeStart, rangeEnd, historyMinutes].every(Number.isFinite) || !MARKETS.includes(market)) {
       throw new RoundError('설정 값이 올바르지 않습니다.');
     }
-    const round = await rounds.create(user.id, { rangeStart, rangeEnd, historyMinutes, hideDate: !!hideDate, hidePrice: !!hidePrice });
+    const round = await rounds.create(user.id, { market, rangeStart, rangeEnd, historyMinutes, hideDate: !!hideDate, hidePrice: !!hidePrice });
     store.logEvent(user.id, 'round_start');
     return round;
   });
@@ -175,18 +181,20 @@ export function buildApp(options: { dbPath: string; staticDir?: string }) {
 
   app.post<{ Params: { id: string }; Body: RoundResultInput }>('/api/rounds/:id/finish', async (req) => {
     const user = requirePlayer(req);
-    const reveal = rounds.finish(user.id, req.params.id);
     const result = req.body;
+    const reveal = rounds.finish(user.id, req.params.id, Math.floor(Number(result?.candleCount) || 0));
     const record = {
       id: req.params.id,
       userId: user.id,
       playedAt: Date.now(),
       realStartTime: reveal.realStartTime,
-      realEndTime: reveal.realStartTime + result.candleCount * MINUTE,
+      realEndTime: reveal.realEndTime,
       hideDate: reveal.settings.hideDate,
       hidePrice: reveal.settings.hidePrice,
       dateOffset: reveal.dateOffset,
       priceFactor: reveal.priceFactor,
+      market: reveal.market,
+      symbol: reveal.symbol,
       candleCount: result.candleCount,
       startEquity: result.startEquity,
       endEquity: result.endEquity,
@@ -208,7 +216,7 @@ export function buildApp(options: { dbPath: string; staticDir?: string }) {
       store.insertRound(record);
       store.logEvent(user.id, 'round_finish');
     }
-    return { saved, record };
+    return { saved, record: { ...record, symbolName: reveal.symbolName } };
   });
 
   // ---------- 기록, 랭킹 ----------
