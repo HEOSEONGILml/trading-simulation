@@ -12,7 +12,7 @@ services:
     volumes:
       - app-data:/data
 
-  # 매일 21시(KST) 차트 퀴즈를 스레드와 X에 게시 (server/src/quiz/run.ts)
+  # 매일 21시(KST) 차트 퀴즈를 스레드에 게시 (server/src/quiz/run.ts)
   quiz:
     # app과 같은 이미지를 쓴다 (따로 빌드하지 않음)
     image: blindcandle-app

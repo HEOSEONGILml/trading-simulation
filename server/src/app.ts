@@ -15,7 +15,8 @@ import {
 } from './auth.ts';
 import { MINUTE } from './binance.ts';
 import { RANKING_MIN_ROUNDS, Store, summarize, type RankingSort, type RoundResultInput, type User } from './db.ts';
-import { loadState, quizDir as quizDirOf, saveState } from './quiz/state.ts';
+import { quizAnswerPage } from './quiz/page.ts';
+import { loadState, quizDir as quizDirOf, saveState, type QuizPage } from './quiz/state.ts';
 import { authState, authorizeUrl, exchangeCode, type ThreadsApp } from './quiz/threads.ts';
 import { RoundError, Rounds, type RoundSettings } from './rounds.ts';
 
@@ -242,12 +243,18 @@ export function buildApp(options: { dbPath: string; staticDir?: string; threadsA
     return { sort, minRounds: RANKING_MIN_ROUNDS, entries };
   });
 
-  // 차트 퀴즈 이미지 (스레드가 공개 URL로 가져간다, src/quiz/run.ts)
+  // 차트 퀴즈: 문제·정답 이미지(스레드가 공개 URL로 가져간다)와 정답 페이지 (src/quiz/run.ts)
   const quizDir = quizDirOf(options.dbPath);
   app.get<{ Params: { file: string } }>('/quiz/:file', async (req, reply) => {
-    const path = join(quizDir, req.params.file);
-    if (!/^\d+\.png$/.test(req.params.file) || !existsSync(path)) return reply.status(404).send({ error: 'Not Found' });
-    return reply.type('image/png').header('cache-control', 'public, max-age=86400').send(readFileSync(path));
+    const { file } = req.params;
+    if (/^\d+(-answer)?\.png$/.test(file) && existsSync(join(quizDir, file))) {
+      return reply.type('image/png').header('cache-control', 'public, max-age=86400').send(readFileSync(join(quizDir, file)));
+    }
+    if (/^\d+$/.test(file) && existsSync(join(quizDir, `${file}.json`))) {
+      const page = JSON.parse(readFileSync(join(quizDir, `${file}.json`), 'utf8')) as QuizPage;
+      return reply.type('text/html; charset=utf-8').send(quizAnswerPage(page));
+    }
+    return reply.status(404).send({ error: 'Not Found' });
   });
 
   // 스레드 계정 연결 (운영자가 한 번 접속해 허용). 앱 테스터로 등록된 계정만 허용할 수 있다

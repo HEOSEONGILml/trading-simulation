@@ -9,7 +9,15 @@ export interface QuizState {
   /** 마지막으로 게시한 날 (KST, YYYY-MM-DD). 재시작해도 하루 두 번 올리지 않는다 */
   lastPostedDay?: string;
   threads?: ThreadsToken;
-  log: { number: number; at: string; threads?: string; x?: string; error?: string }[];
+  log: { number: number; at: string; threads?: string; error?: string }[];
+}
+
+/** 정답 페이지에 보여 줄 내용 (quiz/<번호>.json) */
+export interface QuizPage {
+  number: number;
+  up: boolean;
+  result: string;
+  real: string;
 }
 
 export function quizDir(dbPath: string) {

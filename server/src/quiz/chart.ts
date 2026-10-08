@@ -1,4 +1,4 @@
-// 퀴즈 이미지: 가린 차트를 SVG로 그려 PNG로 변환한다 (1080×1080, 스레드와 X 공용)
+// 퀴즈 이미지: 가린 차트를 SVG로 그려 PNG로 변환한다 (1080×1080)
 
 import { fileURLToPath } from 'node:url';
 import { Resvg } from '@resvg/resvg-js';
@@ -36,6 +36,15 @@ export interface QuizChartInput {
   pricePrecision: number;
   intervalLabel: string;
   horizonLabel: string;
+  /** 정답 이미지: 가렸던 구간의 봉을 채우고 결과를 적는다 */
+  answer?: {
+    future: Candle[];
+    up: boolean;
+    /** 예: ▲ 상승 +2.31% */
+    result: string;
+    /** 예: 실제 2022-01-19 15:45 KST · 42,364 → 43,342 USDT */
+    real: string;
+  };
 }
 
 function esc(s: string) {
@@ -56,7 +65,8 @@ function kstTime(ms: number) {
 }
 
 export function quizSvg(input: QuizChartInput): string {
-  const { candles, futureBars, pricePrecision } = input;
+  const { candles, futureBars, pricePrecision, answer } = input;
+  const all = answer ? [...candles, ...answer.future] : candles;
   const left = PAD;
   const right = SIZE - PAD - AXIS;
   const top = HEADER + 20;
@@ -71,7 +81,7 @@ export function quizSvg(input: QuizChartInput): string {
   let hi = -Infinity;
   let lo = Infinity;
   let maxVol = 0;
-  for (const c of candles) {
+  for (const c of all) {
     hi = Math.max(hi, c[2]);
     lo = Math.min(lo, c[3]);
     maxVol = Math.max(maxVol, c[5]);
@@ -88,7 +98,7 @@ export function quizSvg(input: QuizChartInput): string {
   // 머리말
   parts.push(
     `<text x="${PAD}" y="${PAD + 40}" font-family="${FONT}" font-size="44" font-weight="700" fill="${COLOR.text}">` +
-      `<tspan fill="${COLOR.accent}">◆</tspan> BlindCandle 차트 퀴즈 <tspan fill="${COLOR.accent}">#${input.number}</tspan></text>`,
+      `<tspan fill="${COLOR.accent}">◆</tspan> BlindCandle 차트 퀴즈 <tspan fill="${COLOR.accent}">#${input.number}</tspan>${answer ? ' 정답' : ''}</text>`,
   );
   parts.push(
     `<text x="${PAD}" y="${PAD + 92}" font-family="${FONT}" font-size="28" fill="${COLOR.muted}">` +
@@ -110,9 +120,19 @@ export function quizSvg(input: QuizChartInput): string {
     );
   }
 
+  // 정답 구간 배경 (정답 이미지에서는 봉 뒤에 깔고, 문제 이미지에서는 봉 위에서 가린다)
+  const qx = left + slotW * candles.length;
+  const panel = `<rect x="${qx.toFixed(1)}" y="${top}" width="${(right - qx).toFixed(1)}" height="${bottom - top}" fill="${COLOR.panel}" opacity="0.9"/>`;
+  if (answer) {
+    parts.push(panel);
+    parts.push(
+      `<text x="${((qx + right) / 2).toFixed(1)}" y="${top + 34}" text-anchor="middle" font-family="${FONT}" font-size="24" fill="${COLOR.muted}">${esc(input.horizonLabel)}</text>`,
+    );
+  }
+
   // 시각 눈금 (6시간마다)
-  for (let i = 0; i < candles.length; i++) {
-    const t = candles[i][0];
+  for (let i = 0; i < all.length; i++) {
+    const t = all[i][0];
     if (((t / 3600_000) % 6) === 0) {
       parts.push(
         `<line x1="${x(i).toFixed(1)}" x2="${x(i).toFixed(1)}" y1="${top}" y2="${volBottom}" stroke="${COLOR.grid}" stroke-width="1" stroke-dasharray="4 6"/>`,
@@ -124,7 +144,7 @@ export function quizSvg(input: QuizChartInput): string {
   }
 
   // 봉과 거래량
-  candles.forEach((c, i) => {
+  all.forEach((c, i) => {
     const [, o, h, l, cl, v] = c;
     const color = cl >= o ? COLOR.up : COLOR.down;
     const cx = x(i).toFixed(1);
@@ -153,28 +173,34 @@ export function quizSvg(input: QuizChartInput): string {
       `</text>`,
   );
 
-  // 정답 구간
-  const qx = left + slotW * candles.length;
-  parts.push(
-    `<rect x="${qx.toFixed(1)}" y="${top}" width="${(right - qx).toFixed(1)}" height="${bottom - top}" fill="${COLOR.panel}" opacity="0.9"/>`,
-  );
-  parts.push(
-    `<text x="${((qx + right) / 2).toFixed(1)}" y="${((top + bottom) / 2 + 40).toFixed(1)}" text-anchor="middle" font-family="${FONT}" font-size="120" font-weight="700" fill="${COLOR.accent}">?</text>`,
-  );
-  parts.push(
-    `<text x="${((qx + right) / 2).toFixed(1)}" y="${((top + bottom) / 2 + 90).toFixed(1)}" text-anchor="middle" font-family="${FONT}" font-size="26" fill="${COLOR.muted}">${esc(input.horizonLabel)}</text>`,
-  );
+  // 문제 이미지: 정답 구간을 물음표로 가린다
+  if (!answer) {
+    parts.push(panel);
+    parts.push(
+      `<text x="${((qx + right) / 2).toFixed(1)}" y="${((top + bottom) / 2 + 40).toFixed(1)}" text-anchor="middle" font-family="${FONT}" font-size="120" font-weight="700" fill="${COLOR.accent}">?</text>`,
+    );
+    parts.push(
+      `<text x="${((qx + right) / 2).toFixed(1)}" y="${((top + bottom) / 2 + 90).toFixed(1)}" text-anchor="middle" font-family="${FONT}" font-size="26" fill="${COLOR.muted}">${esc(input.horizonLabel)}</text>`,
+    );
+  }
 
   // 꼬리말
   const fy = SIZE - FOOTER + 50;
-  parts.push(
-    `<text x="${PAD}" y="${fy}" font-family="${FONT}" font-size="40" font-weight="700" fill="${COLOR.text}">` +
-      esc(`${input.horizonLabel} 가격은?`) +
-      ` <tspan fill="${COLOR.up}">▲ 상승</tspan>  <tspan fill="${COLOR.down}">▼ 하락</tspan></text>`,
-  );
-  parts.push(
-    `<text x="${PAD}" y="${fy + 56}" font-family="${FONT}" font-size="26" fill="${COLOR.muted}">가린 차트로 직접 매매 연습 · <tspan fill="${COLOR.accent}">blindcandle.com</tspan></text>`,
-  );
+  if (answer) {
+    parts.push(
+      `<text x="${PAD}" y="${fy}" font-family="${FONT}" font-size="40" font-weight="700" fill="${COLOR.text}">정답 <tspan fill="${answer.up ? COLOR.up : COLOR.down}">${esc(answer.result)}</tspan></text>`,
+    );
+    parts.push(`<text x="${PAD}" y="${fy + 56}" font-family="${FONT}" font-size="26" fill="${COLOR.muted}">${esc(answer.real)}</text>`);
+  } else {
+    parts.push(
+      `<text x="${PAD}" y="${fy}" font-family="${FONT}" font-size="40" font-weight="700" fill="${COLOR.text}">` +
+        esc(`${input.horizonLabel} 가격은?`) +
+        ` <tspan fill="${COLOR.up}">▲ 상승</tspan>  <tspan fill="${COLOR.down}">▼ 하락</tspan></text>`,
+    );
+    parts.push(
+      `<text x="${PAD}" y="${fy + 56}" font-family="${FONT}" font-size="26" fill="${COLOR.muted}">가린 차트로 직접 매매 연습 · <tspan fill="${COLOR.accent}">blindcandle.com</tspan></text>`,
+    );
+  }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}" viewBox="0 0 ${SIZE} ${SIZE}">${parts.join('')}</svg>`;
 }
