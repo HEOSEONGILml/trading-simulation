@@ -2,42 +2,33 @@
 
 Claude가 혼자 할 수 없는 일(결제, 계정 가입, 본인 명의 신고, 본인 이름으로 하는 게시 등)을 여기에 적습니다.
 처리한 뒤 `상태`를 `완료`로 바꾸고, 결과(발급된 키, 주소, 답변 등)를 `결과`에 적어 주세요.
-R6, R8은 서로 상관없으니 되는 것부터 처리하면 됩니다. 합쳐서 30분 정도, 비용은 없습니다.
+지금 남은 일은 R9 하나(15분, 비용 없음)입니다.
 
 ## 진행 중
 
-### R6. 스레드 계정 만들고 퀴즈 자동 게시 연결 (20분, 비용 없음)
+### R9. 앱인토스 콘솔 가입과 미니앱 등록 (15분, 비용 없음)
 - 요청일: 2026-10-08
-- 이유: 매일 21시에 "블라인드 차트 퀴즈"(가린 차트 이미지 + 정답 문구와 정답 차트 링크는 가림 처리)를 자동으로 올려 첫 사용자를 모읍니다. 게시 프로그램은 서버에 준비되어 있고 계정 연결만 남았습니다.
+- 이유: 토스 미니앱으로 출시하려면 사용자님 토스 계정으로 개발자 콘솔에 가입해야 합니다. 사업자등록 없이 개인으로 됩니다. 그동안 Claude는 웹앱을 미니앱 형태로 바꾸는 작업을 합니다.
 - 할 일:
-  1. 스레드에서 서비스용 계정을 새로 만듭니다 (인스타그램 계정이 필요하면 서비스용으로 하나 만듭니다)
-     - 이름 `BlindCandle`, 아이디 `blindcandle` (안 되면 `blindcandle.chart`)
-     - 소개: `날짜와 가격을 가린 실제 BTC 선물 차트로 매매 연습 · 매일 21시 차트 퀴즈`
-     - 링크: `https://blindcandle.com`
-  2. https://developers.facebook.com 에 사용자님 페이스북 계정으로 로그인 → **My Apps** → **Create App**
-     - 앱 이름 `BlindCandle Quiz`, 사용 사례(Use case)에서 **Access the Threads API** 선택 → 만들기
-  3. 만든 앱 → **Use cases** → Threads API의 **Customize**
-     - **Permissions**: `threads_basic`, `threads_content_publish` 추가
-     - **Settings**: **Redirect Callback URLs**에 `https://blindcandle.com/auth/threads/callback` 입력 후 저장
-  4. 앱 → **App roles** → **Roles** → **Add People** → **Threads Tester** → 1번에서 만든 스레드 아이디 입력
-  5. 스레드(웹 또는 앱)에 그 계정으로 로그인 → **설정** → **계정** → **웹사이트 권한**(Website permissions) → **초대**에서 수락
-  6. 3번 화면의 **Threads app ID**와 **Threads app secret**을 `deploy/secrets.env`에 넣습니다
-     - `deploy/secrets.env.example`을 `deploy/secrets.env`로 복사한 뒤 `THREADS_APP_ID=`, `THREADS_APP_SECRET=` 뒤에 붙여 넣기 (이 파일은 git에 올라가지 않습니다)
-  7. 여기까지 하고 `상태`를 `완료`로 바꿔 주세요. Claude가 서버에 올린 뒤 **연결 주소**를 결과에 적어 드립니다. 스레드 계정으로 로그인된 브라우저에서 그 주소를 열고 **허용**만 누르면 끝납니다
+  1. 휴대폰에 토스 앱이 로그인된 상태에서 PC로 https://apps-in-toss.toss.im 접속 → 가입 (토스 비즈니스 회원, 19세 이상)
+  2. 워크스페이스 만들기: 사업자 없이 **개인**으로, 크리에이터 이름은 `블라인드캔들` (10자 이내 규칙)
+  3. 약관 동의 후 **앱 등록**: 앱 이름(appName)에 `blindcandle` 입력
+     - appName은 **나중에 바꿀 수 없습니다.** 이미 쓰이고 있으면 `blindcandle-chart` 로
+  4. 콘솔 메뉴에 **API 키**나 **배포 키**(CLI로 번들을 올리는 키)를 발급하는 곳이 있는지 봐 주세요
+     - 있으면: 발급해서 키 값을 `deploy/.env` 파일 맨 아래에 `AIT_API_KEY=키값` 한 줄로 붙여 넣기 (이 파일은 git에 올라가지 않습니다)
+     - 없으면: 결과에 "없음"이라고만 적어 주세요. 번들 파일 업로드는 Claude가 파일을 만들어 드리면 콘솔에서 올리는 방식으로 하겠습니다
 - 상태: 대기
-- 결과: (만든 스레드 아이디)
-
-### R8. 검색 등록 (10분, 비용 없음)
-- 요청일: 2026-10-08
-- 이유: "비트코인 선물 모의투자", "선물 연습" 같은 검색으로 들어오게 합니다. 효과는 몇 주 뒤부터 나지만 한 번만 하면 됩니다.
-- 할 일:
-  1. https://searchadvisor.naver.com → 로그인 → **웹마스터 도구** → 사이트 등록에 `https://blindcandle.com` 입력 → 소유 확인 방법 **HTML 태그** 선택 → 나오는 `<meta name="naver-site-verification" ... />` 한 줄을 결과에 붙여 넣기
-  2. https://search.google.com/search-console → **URL 접두어**에 `https://blindcandle.com` → 확인 방법 **HTML 태그** → 나오는 `<meta name="google-site-verification" ... />` 한 줄을 결과에 붙여 넣기
-  3. Claude가 태그를 사이트에 넣고 배포했다고 알려 드리면, 두 사이트에서 **확인**을 누르고 사이트맵 `https://blindcandle.com/sitemap.xml`을 제출합니다
-- 상태: 대기
-- 결과: (네이버 태그 / 구글 태그)
+- 결과: (등록한 appName / API 키 있음·없음)
 
 ## 완료
+
+### R6. 스레드 계정 만들고 퀴즈 자동 게시 연결
+- 상태: 취소 (2026-10-08)
+- 결과: 사용자 결정으로 스레드 계획 중단, 토스 미니앱을 주 경로로 변경. 퀴즈 코드는 git 기록(5496ec3)에 남아 있음
+
+### R8. 검색 등록
+- 상태: 취소 (2026-10-08)
+- 결과: 토스 미니앱은 토스 안 검색과 탐색으로 노출되므로 네이버, 구글 등록은 지금 필요 없음. 웹 사용자를 따로 모을 때 다시 검토
 
 ### R5. 커뮤니티에 피드백 요청 글 올리기
 - 요청일: 2026-10-08
