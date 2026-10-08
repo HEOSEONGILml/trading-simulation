@@ -14,6 +14,7 @@ import { ResultDialog } from './components/ResultDialog.tsx';
 import { SetupDialog } from './components/SetupDialog.tsx';
 import { Game } from './game/game.ts';
 import { useIsMobile } from './useIsMobile.ts';
+import type { Market } from './market.ts';
 import { loadPrefs, savePrefs, type Prefs, type SetupSettings, type ViewSettings } from './settings.ts';
 
 /** 로그인 확인 → 닉네임 설정 → 회원 설정 불러오기 → 트레이딩 화면 */
@@ -89,6 +90,8 @@ function Trainer({ user, initialPrefs, onChangeNickname, onLogout }: TrainerProp
   const version = useSyncExternalStore(game.subscribe, game.getVersion);
   const [page, setPage] = useState<Page>('trade');
   const [resultOpen, setResultOpen] = useState(false);
+  // 서버가 라운드를 열 수 있는 시장 (불러오기 전과 실패 때는 코인만)
+  const [available, setAvailable] = useState<Market[]>(['coin']);
   const mobile = useIsMobile();
 
   const updatePrefs = (change: Partial<Prefs>) => {
@@ -99,6 +102,13 @@ function Trainer({ user, initialPrefs, onChangeNickname, onLogout }: TrainerProp
     });
   };
   game.onLeverageChange = (leverage) => updatePrefs({ leverage });
+
+  useEffect(() => {
+    api
+      .markets()
+      .then((res) => setAvailable(res.markets))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const stopWatching = game.watchPageLeave();
@@ -186,6 +196,7 @@ function Trainer({ user, initialPrefs, onChangeNickname, onLogout }: TrainerProp
         <SetupDialog
           initial={setup}
           speed={view.speed}
+          available={available}
           loading={game.phase === 'loading'}
           canClose={game.round !== null && game.phase !== 'loading'}
           onClose={() => game.closeSetup()}

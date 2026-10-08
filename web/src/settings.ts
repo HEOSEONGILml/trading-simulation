@@ -1,8 +1,11 @@
 // 회원별 설정. 서버에 저장해 어느 기기에서든 같은 설정으로 시작하고, 브라우저에도 사본을 둔다 (실패해도 기본값으로 동작)
 
 import { api } from './api.ts';
+import { MARKET_INFO, type Market } from './market.ts';
 
 export interface SetupSettings {
+  /** 섹션 (코인, 국내 주식, 미국 주식) */
+  market: Market;
   rangeStart: string; // YYYY-MM-DD
   rangeEnd: string;
   historyMinutes: number;
@@ -41,6 +44,7 @@ export const HISTORY_OPTIONS = [
 const today = () => new Date().toISOString().slice(0, 10);
 
 export const DEFAULT_SETUP: SetupSettings = {
+  market: 'coin',
   rangeStart: '2020-01-01',
   rangeEnd: today(),
   historyMinutes: 1440,
@@ -66,9 +70,21 @@ type SavedPrefs = { setup?: Partial<SetupSettings>; view?: Partial<ViewSettings>
 function withDefaults(saved: SavedPrefs | null | undefined): Prefs {
   const s = saved ?? {};
   return {
-    setup: { ...DEFAULT_SETUP, ...s.setup },
+    setup: fitSetup({ ...DEFAULT_SETUP, ...s.setup }),
     view: { ...DEFAULT_VIEW, ...s.view },
     leverage: typeof s.leverage === 'number' ? s.leverage : DEFAULT_LEVERAGE,
+  };
+}
+
+/** 시장에 맞지 않는 시작 범위와 과거 구간을 그 시장의 기본값으로 바꾼다 */
+export function fitSetup(setup: SetupSettings): SetupSettings {
+  const info = MARKET_INFO[setup.market] ?? MARKET_INFO.coin;
+  const options = info.historyOptions.map((o) => o.minutes);
+  return {
+    ...setup,
+    market: info.market,
+    rangeStart: setup.rangeStart < info.earliestDate ? info.earliestDate : setup.rangeStart,
+    historyMinutes: options.includes(setup.historyMinutes) ? setup.historyMinutes : options[Math.min(1, options.length - 1)],
   };
 }
 

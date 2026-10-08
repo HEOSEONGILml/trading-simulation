@@ -1,4 +1,5 @@
 import type { Candle } from './engine/types.ts';
+import type { Market } from './market.ts';
 
 type RawCandle = [number, number, number, number, number, number];
 
@@ -43,6 +44,7 @@ export interface RankingEntry {
 }
 
 export interface RoundSettings {
+  market: Market;
   rangeStart: number;
   rangeEnd: number;
   historyMinutes: number;
@@ -52,6 +54,7 @@ export interface RoundSettings {
 
 export interface RoundStart {
   roundId: string;
+  market: Market;
   pricePrecision: number;
   startTime: number;
   history: Candle[];
@@ -85,6 +88,10 @@ export interface RoundRecord extends Omit<RoundResult, 'trades' | 'profitMinutes
   returnPct: number;
   dateOffset: number;
   priceFactor: number;
+  market: Market;
+  symbol: string;
+  /** 라운드를 끝낸 직후 응답에만 있다 */
+  symbolName?: string;
 }
 
 export interface HistorySummary {
@@ -109,13 +116,15 @@ const post = (body: unknown, method = 'POST'): RequestInit => ({ method, body: J
 
 export const api = {
   me: () => request<{ user: User | null }>('/api/auth/me'),
+  /** 지금 라운드를 열 수 있는 시장 */
+  markets: () => request<{ markets: Market[] }>('/api/markets'),
   signUp: (username: string, password: string) => request<{ user: User }>('/api/auth/signup', post({ username, password })),
   logIn: (username: string, password: string) => request<{ user: User }>('/api/auth/login', post({ username, password })),
   logOut: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
   deleteAccount: (password: string) => request<{ ok: true }>('/api/auth/account', post({ password }, 'DELETE')),
   setNickname: (nickname: string) => request<{ user: User }>('/api/auth/nickname', post({ nickname }, 'PUT')),
-  ranking: (sort: RankingSort) =>
-    request<{ sort: RankingSort; minRounds: number; entries: RankingEntry[] }>(`/api/ranking?sort=${sort}`),
+  ranking: (sort: RankingSort, market: Market) =>
+    request<{ sort: RankingSort; minRounds: number; entries: RankingEntry[] }>(`/api/ranking?sort=${sort}&market=${market}`),
 
   async createRound(settings: RoundSettings): Promise<RoundStart> {
     const res = await request<Omit<RoundStart, 'history'> & { history: RawCandle[] }>('/api/rounds', {
@@ -159,7 +168,7 @@ export const api = {
   settings: () => request<{ settings: unknown }>('/api/settings'),
   saveSettings: (settings: unknown) => request<{ ok: true }>('/api/settings', post({ settings }, 'PUT')),
 
-  history: () => request<{ summary: HistorySummary; rounds: RoundRecord[] }>('/api/history'),
+  history: (market: Market) => request<{ summary: HistorySummary; rounds: RoundRecord[] }>(`/api/history?market=${market}`),
 
   deleteHistory: (id: string) => request<{ ok: true }>(`/api/history/${id}`, { method: 'DELETE' }),
 };

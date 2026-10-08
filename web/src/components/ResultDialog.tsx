@@ -25,7 +25,11 @@ export function ResultDialog({ game, onClose, onNext, onChangeSettings, onHistor
   const realStart = record?.realStartTime;
   const factor = record?.priceFactor ?? 1;
   const offset = record?.dateOffset ?? 0;
-  const realPrice = (p: number) => formatNumber(p / factor, 1);
+  const info = game.info;
+  const realPrice = (p: number) => formatNumber(p / factor, info.futures ? 1 : info.moneyDigits);
+  const money = (v: number) => formatNumber(v, info.moneyDigits);
+  // 주식은 장 마감과 주말로 봉 사이가 비므로 서버가 알려준 실제 끝 시각을 쓴다
+  const realEnd = record ? record.realEndTime : (realStart ?? 0) + duration;
 
   return (
     <div className="modal-backdrop">
@@ -39,9 +43,11 @@ export function ResultDialog({ game, onClose, onNext, onChangeSettings, onHistor
         <div className="modal-body">
           <div className="result-hero">
             <div className={`result-return mono ${pnlClass(returnPct)}`}>{formatSigned(returnPct)}%</div>
-            <div className={`mono ${pnlClass(pnl)}`}>{formatSigned(pnl)} USDT</div>
+            <div className={`mono ${pnlClass(pnl)}`}>
+              {formatSigned(pnl, info.moneyDigits)} {info.currency}
+            </div>
             <div className="muted small">
-              {formatNumber(summary.startEquity)} → {formatNumber(summary.endEquity)} USDT · 진행 {formatDuration(duration)}
+              {money(summary.startEquity)} → {money(summary.endEquity)} {info.currency} · 진행 {formatDuration(duration)}
             </div>
           </div>
 
@@ -60,40 +66,50 @@ export function ResultDialog({ game, onClose, onNext, onChangeSettings, onHistor
             </div>
             <div className="stat-card">
               <span>실현 손익</span>
-              <b className={`mono ${pnlClass(summary.realizedPnl)}`}>{formatSigned(summary.realizedPnl)}</b>
+              <b className={`mono ${pnlClass(summary.realizedPnl)}`}>{formatSigned(summary.realizedPnl, info.moneyDigits)}</b>
             </div>
             <div className="stat-card">
               <span>수수료</span>
-              <b className="mono">{formatNumber(summary.fees)}</b>
+              <b className="mono">{money(summary.fees)}</b>
             </div>
-            <div className="stat-card">
-              <span>강제 청산</span>
-              <b className={`mono ${summary.liquidationCount ? 'down' : ''}`}>{summary.liquidationCount}</b>
-            </div>
+            {info.futures && (
+              <div className="stat-card">
+                <span>강제 청산</span>
+                <b className={`mono ${summary.liquidationCount ? 'down' : ''}`}>{summary.liquidationCount}</b>
+              </div>
+            )}
           </div>
 
           <div className="reveal">
             <div className="reveal-title">실제 차트 정보</div>
             {realStart !== undefined ? (
               <>
+                {record?.symbolName && !info.futures && (
+                  <div className="kv">
+                    <span>종목</span>
+                    <b>
+                      {record.symbolName} <span className="muted mono">{record.symbol}</span>
+                    </b>
+                  </div>
+                )}
                 <div className="kv">
                   <span>실제 기간</span>
                   <span className="mono">
-                    {formatDateTime(realStart)} ({weekday(realStart)}) ~ {formatDateTime(realStart + duration)}
+                    {formatDateTime(realStart)} ({weekday(realStart)}) ~ {formatDateTime(realEnd)}
                   </span>
                 </div>
                 {offset !== 0 && (
                   <div className="kv muted">
                     <span>표시된 기간</span>
                     <span className="mono">
-                      {formatDateTime(realStart + offset)} ~ {formatDateTime(realStart + offset + duration)}
+                      {formatDateTime(realStart + offset)} ~ {formatDateTime(realEnd + offset)}
                     </span>
                   </div>
                 )}
                 <div className="kv">
                   <span>실제 가격</span>
                   <span className="mono">
-                    {realPrice(result.startPrice)} → {realPrice(result.endPrice)} USDT
+                    {realPrice(result.startPrice)} → {realPrice(result.endPrice)} {info.currency}
                   </span>
                 </div>
                 {factor !== 1 && (
@@ -129,11 +145,11 @@ export function ResultDialog({ game, onClose, onNext, onChangeSettings, onHistor
                     const net = t.pnl - t.fees;
                     return (
                       <tr key={t.id}>
-                        <td className={t.side === 'long' ? 'up' : 'down'}>{t.side === 'long' ? '롱' : '숏'}</td>
+                        <td className={t.side === 'long' ? 'up' : 'down'}>{info.futures ? (t.side === 'long' ? '롱' : '숏') : '매수'}</td>
                         <td className="mono">{formatDateTime(t.openTime - offset)}</td>
                         <td className="mono">{realPrice(t.entryPrice)}</td>
                         <td className="mono">{realPrice(t.exitPrice)}</td>
-                        <td className={`mono ${pnlClass(net)}`}>{formatSigned(net)}</td>
+                        <td className={`mono ${pnlClass(net)}`}>{formatSigned(net, info.moneyDigits)}</td>
                         <td>{t.closeReason ? REASON_LABEL[t.closeReason] : '-'}</td>
                       </tr>
                     );

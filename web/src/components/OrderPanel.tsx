@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { MAX_LEVERAGE, maxNotionalFor } from '../engine/brackets.ts';
-import { INITIAL_BALANCE, MAKER_FEE, TAKER_FEE } from '../engine/exchange.ts';
+
 import type { OrderSide } from '../engine/types.ts';
 import type { Game } from '../game/game.ts';
 import { formatNumber, formatSigned, pnlClass } from '../format.ts';
@@ -107,6 +107,8 @@ export const EMPTY_DRAFT: OrderDraft = {
 
 export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraftChange }: OrderFormProps) {
   const ex = game.exchange!;
+  const info = game.info;
+  const money = (v: number) => formatNumber(v, info.moneyDigits);
   const precision = game.round?.pricePrecision ?? 1;
   const [tab, setTab] = useState(draft.tab);
   const [price, setPrice] = useState(draft.price);
@@ -127,8 +129,11 @@ export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraf
   const maxBuy = ex.maxOpenNotional('buy', refPrice);
   const maxSell = ex.maxOpenNotional('sell', refPrice);
   const sizeValue = parseNumber(size) ?? 0;
-  const feeRate = tab === 'limit' ? MAKER_FEE : TAKER_FEE;
-  const cost = reduceOnly ? 0 : sizeValue / ex.leverage + sizeValue * feeRate;
+  const feeRate = tab === 'limit' ? ex.rules.makerFee : ex.rules.takerFee;
+  // 주식은 1주 단위로 내림한 수량만 주문된다
+  const orderQty = ex.roundQty(refPrice > 0 ? sizeValue / refPrice : 0);
+  const orderValue = info.futures ? sizeValue : orderQty * refPrice;
+  const cost = reduceOnly ? 0 : orderValue / ex.leverage + orderValue * feeRate;
   const tradable = game.phase === 'running' || game.phase === 'paused';
 
   // 익절/손절가를 증거금 대비 수익률(%)로 환산한다. 방향은 주문 버튼이 하나면 그 방향, 아니면 입력값으로 추정
@@ -148,11 +153,12 @@ export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraf
   const onPct = (value: number) => {
     setPct(value);
     const base = side === 'buy' ? maxBuy : side === 'sell' ? maxSell : Math.max(maxBuy, maxSell);
-    setSize(value > 0 ? (Math.floor(((base * value) / 100) * 100) / 100).toFixed(2) : '');
+    const digits = info.moneyDigits;
+    setSize(value > 0 ? (Math.floor(((base * value) / 100) * 10 ** digits) / 10 ** digits).toFixed(digits) : '');
   };
 
   const submit = (orderSide: OrderSide) => {
-    if (!(sizeValue > 0)) return game.toast('error', '주문 규모(USDT)를 입력해주세요.');
+    if (!(sizeValue > 0)) return game.toast('error', `주문 금액(${info.currency})을 입력해주세요.`);
     const options = {
       reduceOnly,
       takeProfit: tpsl && !reduceOnly ? parseNumber(tp) : null,
@@ -173,17 +179,19 @@ export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraf
 
   return (
     <div className="order-form">
-      <div className="margin-row">
-        <button className="pill" disabled title="격리 증거금만 지원">
-          격리
-        </button>
-        <button className="pill" onClick={() => setLeverageOpen(true)}>
-          {ex.leverage}x
-        </button>
-        <button className="pill" disabled title="단방향 포지션만 지원">
-          단방향
-        </button>
-      </div>
+      {info.futures && (
+        <div className="margin-row">
+          <button className="pill" disabled title="격리 증거금만 지원">
+            격리
+          </button>
+          <button className="pill" onClick={() => setLeverageOpen(true)}>
+            {ex.leverage}x
+          </button>
+          <button className="pill" disabled title="단방향 포지션만 지원">
+            단방향
+          </button>
+        </div>
+      )}
 
       <div className="order-tabs">
         <button className={tab === 'limit' ? 'active' : ''} onClick={() => setTab('limit')}>
@@ -196,7 +204,9 @@ export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraf
 
       <div className="avbl">
         <span>가용</span>
-        <span className="mono">{formatNumber(ex.balance)} USDT</span>
+        <span className="mono">
+          {money(ex.balance)} {info.currency}
+        </span>
       </div>
 
       {tab === 'limit' ? (
@@ -212,7 +222,7 @@ export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraf
           <button className="field-suffix-btn" onClick={() => setPrice(lastPrice.toFixed(precision))} title="현재가 입력">
             최근
           </button>
-          <span className="field-unit">USDT</span>
+          <span className="field-unit">{info.currency}</span>
         </div>
       ) : (
         <div className="field disabled">
@@ -222,20 +232,22 @@ export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraf
       )}
 
       <div className="field">
-        <span className="field-label">규모</span>
+        <span className="field-label">{info.futures ? '규모' : '금액'}</span>
         <input
           className="mono"
           inputMode="decimal"
           value={size}
-          placeholder="0.00"
+          placeholder={(0).toFixed(info.moneyDigits)}
           onChange={(e) => {
             setSize(e.target.value);
             setPct(0);
           }}
         />
-        <span className="field-unit">USDT</span>
+        <span className="field-unit">{info.currency}</span>
       </div>
-      <div className="qty-hint mono">≈ {formatNumber(sizeValue / refPrice, 4)} BTC</div>
+      <div className="qty-hint mono">
+        ≈ {formatNumber(info.futures ? sizeValue / refPrice : orderQty, info.qtyDigits)} {info.qtyUnit}
+      </div>
 
       <input type="range" className="slider" min={0} max={100} value={pct} onChange={(e) => onPct(Number(e.target.value))} />
       <div className="slider-marks">
@@ -255,34 +267,36 @@ export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraf
           <div className="field">
             <span className="field-label">익절가</span>
             <input className="mono" inputMode="decimal" value={tp} onChange={(e) => setTp(e.target.value)} placeholder="선택" />
-            <span className="field-unit">USDT</span>
+            <span className="field-unit">{info.currency}</span>
           </div>
           {tpRoe !== null && (
             <div className="qty-hint">
-              {dir > 0 ? '롱' : '숏'} 기준 수익률 <span className={`mono ${pnlClass(tpRoe)}`}>{formatSigned(tpRoe)}%</span>
+              {info.futures ? (dir > 0 ? '롱 기준 ' : '숏 기준 ') : ''}수익률 <span className={`mono ${pnlClass(tpRoe)}`}>{formatSigned(tpRoe)}%</span>
             </div>
           )}
           <div className="field">
             <span className="field-label">손절가</span>
             <input className="mono" inputMode="decimal" value={sl} onChange={(e) => setSl(e.target.value)} placeholder="선택" />
-            <span className="field-unit">USDT</span>
+            <span className="field-unit">{info.currency}</span>
           </div>
           {slRoe !== null && (
             <div className="qty-hint">
-              {dir > 0 ? '롱' : '숏'} 기준 수익률 <span className={`mono ${pnlClass(slRoe)}`}>{formatSigned(slRoe)}%</span>
+              {info.futures ? (dir > 0 ? '롱 기준 ' : '숏 기준 ') : ''}수익률 <span className={`mono ${pnlClass(slRoe)}`}>{formatSigned(slRoe)}%</span>
             </div>
           )}
         </>
       )}
-      <label className="check">
-        <input type="checkbox" checked={reduceOnly} onChange={(e) => setReduceOnly(e.target.checked)} />
-        감소 전용 (Reduce-Only)
-      </label>
+      {info.futures && (
+        <label className="check">
+          <input type="checkbox" checked={reduceOnly} onChange={(e) => setReduceOnly(e.target.checked)} />
+          감소 전용 (Reduce-Only)
+        </label>
+      )}
 
       <div className={`order-buttons ${side ? 'single' : ''}`}>
         {sides.map((s) => (
           <button key={s} className={s === 'buy' ? 'btn-buy' : 'btn-sell'} disabled={!tradable} onClick={() => submit(s)}>
-            {s === 'buy' ? '매수/롱' : '매도/숏'}
+            {s === 'buy' ? info.buyLabel : info.sellLabel}
           </button>
         ))}
       </div>
@@ -290,13 +304,17 @@ export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraf
         {sides.map((s) => (
           <div key={`cost-${s}`}>
             <span>비용</span>
-            <span className="mono">{formatNumber(cost)} USDT</span>
+            <span className="mono">
+              {money(s === 'sell' && !info.futures ? 0 : cost)} {info.currency}
+            </span>
           </div>
         ))}
         {sides.map((s) => (
           <div key={`max-${s}`}>
             <span>최대</span>
-            <span className="mono">{formatNumber(s === 'buy' ? maxBuy : maxSell)} USDT</span>
+            <span className="mono">
+              {money(s === 'buy' ? maxBuy : maxSell)} {info.currency}
+            </span>
           </div>
         ))}
       </div>
@@ -309,23 +327,31 @@ export function OrderForm({ game, side, onSubmitted, draft = EMPTY_DRAFT, onDraf
 
 export function AccountSummary({ game }: { game: Game }) {
   const ex = game.exchange!;
+  const info = game.info;
+  const money = (v: number) => `${formatNumber(v, info.moneyDigits)} ${info.currency}`;
   const equity = ex.equity();
   const unrealized = ex.unrealizedPnl();
-  const roundReturn = (equity / INITIAL_BALANCE - 1) * 100;
+  const roundReturn = (equity / ex.rules.initialBalance - 1) * 100;
+  const pct = (rate: number) => `${+(rate * 100).toFixed(3)}%`;
+  const fees = info.futures
+    ? `메이커 ${pct(ex.rules.makerFee)} / 테이커 ${pct(ex.rules.takerFee)}`
+    : `${pct(ex.rules.takerFee)}${ex.rules.sellTax ? ` (매도 시 세금 ${pct(ex.rules.sellTax)} 별도)` : ''}`;
   return (
     <div className="account">
       <div className="account-title">계정</div>
       <div className="account-row">
-        <span>마진 잔고</span>
-        <span className="mono">{formatNumber(equity)} USDT</span>
+        <span>{info.futures ? '마진 잔고' : '평가 자산'}</span>
+        <span className="mono">{money(equity)}</span>
       </div>
       <div className="account-row">
-        <span>지갑 잔고</span>
-        <span className="mono">{formatNumber(ex.walletBalance())} USDT</span>
+        <span>{info.futures ? '지갑 잔고' : '현금'}</span>
+        <span className="mono">{money(info.futures ? ex.walletBalance() : ex.balance)}</span>
       </div>
       <div className="account-row">
-        <span>미실현 손익</span>
-        <span className={`mono ${pnlClass(unrealized)}`}>{formatSigned(unrealized)} USDT</span>
+        <span>{info.futures ? '미실현 손익' : '평가 손익'}</span>
+        <span className={`mono ${pnlClass(unrealized)}`}>
+          {formatSigned(unrealized, info.moneyDigits)} {info.currency}
+        </span>
       </div>
       <div className="account-row">
         <span>라운드 수익률</span>
@@ -333,7 +359,7 @@ export function AccountSummary({ game }: { game: Game }) {
       </div>
       <div className="account-row muted">
         <span>수수료</span>
-        <span className="mono">메이커 0.02% / 테이커 0.05%</span>
+        <span className="mono">{fees}</span>
       </div>
     </div>
   );

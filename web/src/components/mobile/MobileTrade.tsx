@@ -23,6 +23,7 @@ function PositionCard({ game }: { game: Game }) {
   const ex = game.exchange!;
   const p = ex.position!;
   const precision = game.round?.pricePrecision ?? 1;
+  const info = game.info;
   const [tpslOpen, setTpslOpen] = useState(false);
   const [closePrice, setClosePrice] = useState('');
   const pnl = ex.unrealizedPnl();
@@ -36,26 +37,30 @@ function PositionCard({ game }: { game: Game }) {
   return (
     <div className="m-card">
       <div className="m-card-head">
-        <span className={`m-badge ${p.side === 'long' ? 'up-bg' : 'down-bg'}`}>{p.side === 'long' ? '롱' : '숏'}</span>
-        <b>BTCUSDT</b>
-        <span className="muted small">격리 {p.leverage}x</span>
+        <span className={`m-badge ${p.side === 'long' ? 'up-bg' : 'down-bg'}`}>
+          {info.futures ? (p.side === 'long' ? '롱' : '숏') : '보유'}
+        </span>
+        <b>{info.symbol}</b>
+        {info.futures && <span className="muted small">격리 {p.leverage}x</span>}
       </div>
       <div className="m-pnl">
         <div>
-          <span className="muted small">미실현 손익 (USDT)</span>
-          <b className={`mono ${pnlClass(pnl)}`}>{formatSigned(pnl)}</b>
+          <span className="muted small">
+            {info.futures ? '미실현 손익' : '평가 손익'} ({info.currency})
+          </span>
+          <b className={`mono ${pnlClass(pnl)}`}>{formatSigned(pnl, info.moneyDigits)}</b>
         </div>
         <div className="right">
-          <span className="muted small">ROE</span>
+          <span className="muted small">{info.futures ? 'ROE' : '수익률'}</span>
           <b className={`mono ${pnlClass(pnl)}`}>{formatSigned((pnl / p.margin) * 100)}%</b>
         </div>
       </div>
       <div className="m-grid">
-        <Cell label="수량 (BTC)" value={formatNumber(p.qty, 4)} />
-        <Cell label="증거금" value={formatNumber(p.margin)} />
+        <Cell label={`수량 (${info.qtyUnit})`} value={formatNumber(p.qty, info.qtyDigits)} />
+        <Cell label={info.futures ? '증거금' : '매입 금액'} value={formatNumber(p.margin, info.moneyDigits)} />
         <Cell label="진입가" value={formatNumber(p.entryPrice, precision)} />
         <Cell label="현재가" value={formatNumber(ex.lastPrice, precision)} />
-        <Cell label="청산가" value={formatNumber(ex.liquidationPrice() ?? 0, precision)} className="liq" />
+        {info.futures && <Cell label="청산가" value={formatNumber(ex.liquidationPrice() ?? 0, precision)} className="liq" />}
         <Cell
           label="익절 / 손절"
           value={`${p.takeProfit !== null ? formatNumber(p.takeProfit, precision) : '--'} / ${p.stopLoss !== null ? formatNumber(p.stopLoss, precision) : '--'}`}
@@ -93,6 +98,7 @@ function MobileLists({ game }: { game: Game }) {
   const [tab, setTab] = useState<Tab>('position');
   const ex = game.exchange!;
   const precision = game.round?.pricePrecision ?? 1;
+  const info = game.info;
   const closedTrades = ex.trades.filter((t) => t.closeTime !== null).reverse();
   const fills = [...ex.fills].reverse();
 
@@ -139,8 +145,8 @@ function MobileLists({ game }: { game: Game }) {
                 </div>
                 <div className="m-grid">
                   <Cell label="가격" value={formatNumber(o.price, precision)} />
-                  <Cell label="수량 (BTC)" value={formatNumber(o.qty, 4)} />
-                  <Cell label="규모 (USDT)" value={formatNumber(o.qty * o.price)} />
+                  <Cell label={`수량 (${info.qtyUnit})`} value={formatNumber(o.qty, info.qtyDigits)} />
+                  <Cell label={`금액 (${info.currency})`} value={formatNumber(o.qty * o.price, info.moneyDigits)} />
                   <Cell
                     label="익절 / 손절"
                     value={`${o.takeProfit !== null ? formatNumber(o.takeProfit, precision) : '--'} / ${o.stopLoss !== null ? formatNumber(o.stopLoss, precision) : '--'}`}
@@ -165,7 +171,7 @@ function MobileLists({ game }: { game: Game }) {
               </div>
               <div className="right">
                 <span className="mono">
-                  {formatNumber(f.price, precision)} × {formatNumber(f.qty, 4)}
+                  {formatNumber(f.price, precision)} × {formatNumber(f.qty, info.qtyDigits)}
                 </span>
                 <div className={`small mono ${pnlClass(f.realizedPnl)}`}>
                   {formatSigned(f.realizedPnl)} <span className="muted">(수수료 {formatNumber(f.fee, 2)})</span>
@@ -184,7 +190,7 @@ function MobileLists({ game }: { game: Game }) {
             return (
               <div key={t.id} className="m-row-item">
                 <div>
-                  <span className={t.side === 'long' ? 'up' : 'down'}>{t.side === 'long' ? '롱' : '숏'}</span>{' '}
+                  <span className={t.side === 'long' ? 'up' : 'down'}>{info.futures ? (t.side === 'long' ? '롱' : '숏') : '매수'}</span>{' '}
                   <span className="muted">{t.closeReason ? REASON_LABEL[t.closeReason] : ''}</span>
                   <div className="muted small mono">
                     {formatDateTime(t.openTime).slice(5)} → {formatDateTime(t.closeTime!).slice(5)}
@@ -194,7 +200,9 @@ function MobileLists({ game }: { game: Game }) {
                   <span className="mono">
                     {formatNumber(t.entryPrice, precision)} → {formatNumber(t.exitPrice, precision)}
                   </span>
-                  <div className={`small mono ${pnlClass(net)}`}>{formatSigned(net)} USDT</div>
+                  <div className={`small mono ${pnlClass(net)}`}>
+                    {formatSigned(net, info.moneyDigits)} {info.currency}
+                  </div>
                 </div>
               </div>
             );
@@ -229,10 +237,10 @@ function OrderSheet({ game, side, draft, onDraftChange, onSideChange, onClose }:
         <div className="sheet-head">
           <div className="segmented">
             <button className={side === 'buy' ? 'active buy' : ''} onClick={() => onSideChange('buy')}>
-              매수/롱
+              {game.info.buyLabel}
             </button>
             <button className={side === 'sell' ? 'active sell' : ''} onClick={() => onSideChange('sell')}>
-              매도/숏
+              {game.info.sellLabel}
             </button>
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="닫기">
@@ -281,10 +289,10 @@ export function MobileTrade({ game, version, view, onViewChange }: Props) {
       {ex && (
         <div className="m-bottom-bar">
           <button className="btn-buy" disabled={!tradable} onClick={() => setSheetSide('buy')}>
-            매수/롱
+            {game.info.buyLabel}
           </button>
           <button className="btn-sell" disabled={!tradable} onClick={() => setSheetSide('sell')}>
-            매도/숏
+            {game.info.sellLabel}
           </button>
         </div>
       )}

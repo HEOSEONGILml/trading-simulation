@@ -26,8 +26,8 @@ const candle = (i: number, price = 100): Candle => ({
 });
 const HISTORY = [candle(-2), candle(-1)];
 const FUTURE = Array.from({ length: 8 }, (_, i) => candle(i, 100 + i));
-const SETTINGS = { rangeStart: 0, rangeEnd: 1, historyMinutes: 60, hideDate: true, hidePrice: true };
-const ROUND = { roundId: 'r1', pricePrecision: 1, startTime: START, history: HISTORY };
+const SETTINGS = { market: 'coin' as const, rangeStart: 0, rangeEnd: 1, historyMinutes: 60, hideDate: true, hidePrice: true };
+const ROUND = { roundId: 'r1', market: 'coin' as const, pricePrecision: 1, startTime: START, history: HISTORY };
 
 /** 진행 중이던 라운드: 3개 캔들이 지났고 롱 포지션 보유 */
 function savedExchange() {

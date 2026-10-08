@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type RankingEntry, type RankingSort } from '../api.ts';
 import { formatNumber, formatSigned, pnlClass } from '../format.ts';
+import { MARKETS, MARKET_INFO, type Market } from '../market.ts';
 
 const SORTS: { key: RankingSort; label: string }[] = [
   { key: 'compound', label: '누적 복리 수익률' },
@@ -12,16 +13,17 @@ const pct = (v: number) => `${formatNumber(v, 1)}%`;
 
 export function RankingPage({ mobile = false }: { mobile?: boolean }) {
   const [sort, setSort] = useState<RankingSort>('compound');
+  const [market, setMarket] = useState<Market>('coin');
   const [data, setData] = useState<{ minRounds: number; entries: RankingEntry[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setData(null);
     api
-      .ranking(sort)
+      .ranking(sort, market)
       .then(setData)
       .catch((err: Error) => setError(err.message));
-  }, [sort]);
+  }, [sort, market]);
 
   const metric = (e: RankingEntry) =>
     sort === 'compound' ? e.compoundReturnPct : sort === 'average' ? e.avgReturnPct : e.profitableRoundPct;
@@ -29,6 +31,13 @@ export function RankingPage({ mobile = false }: { mobile?: boolean }) {
   return (
     <div className="history-page">
       <h2>랭킹</h2>
+      <div className="chips market-chips">
+        {MARKETS.map((m) => (
+          <button key={m} className={`chip ${market === m ? 'active' : ''}`} onClick={() => setMarket(m)}>
+            {MARKET_INFO[m].label}
+          </button>
+        ))}
+      </div>
       <div className="chips">
         {SORTS.map((s) => (
           <button key={s.key} className={`chip ${sort === s.key ? 'active' : ''}`} onClick={() => setSort(s.key)}>

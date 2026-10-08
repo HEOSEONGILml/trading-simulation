@@ -713,6 +713,16 @@ button:disabled {
   color: var(--yellow);
   box-shadow: inset 0 0 0 1px var(--yellow);
 }
+.chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.chip-note {
+  font-size: 11px;
+}
+.market-chips {
+  margin-bottom: 8px;
+}
 .leverage-input {
   display: flex;
   align-items: center;

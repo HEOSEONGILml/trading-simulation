@@ -8,6 +8,7 @@ type Tab = 'position' | 'orders' | 'fills' | 'trades';
 
 export function TpSlDialog({ game, onClose }: { game: Game; onClose: () => void }) {
   const ex = game.exchange!;
+  const info = game.info;
   const p = ex.position!;
   const precision = game.round?.pricePrecision ?? 1;
   const [tp, setTp] = useState(p.takeProfit?.toFixed(precision) ?? '');
@@ -42,17 +43,22 @@ export function TpSlDialog({ game, onClose }: { game: Game; onClose: () => void 
             <span>현재가</span>
             <span className="mono">{formatNumber(ex.lastPrice, precision)}</span>
           </div>
-          <div className="kv">
-            <span>청산가</span>
-            <span className="mono">{formatNumber(ex.liquidationPrice() ?? 0, precision)}</span>
-          </div>
+          {info.futures && (
+            <div className="kv">
+              <span>청산가</span>
+              <span className="mono">{formatNumber(ex.liquidationPrice() ?? 0, precision)}</span>
+            </div>
+          )}
           <div className="field">
             <span className="field-label">익절가</span>
             <input className="mono" value={tp} onChange={(e) => setTp(e.target.value)} placeholder="없음" />
           </div>
           {tpPnl !== null && (
             <p className="hint">
-              예상 손익 <span className={`mono ${pnlClass(tpPnl)}`}>{formatSigned(tpPnl)} USDT</span>
+              예상 손익{' '}
+              <span className={`mono ${pnlClass(tpPnl)}`}>
+                {formatSigned(tpPnl, info.moneyDigits)} {info.currency}
+              </span>
             </p>
           )}
           <div className="field">
@@ -61,7 +67,10 @@ export function TpSlDialog({ game, onClose }: { game: Game; onClose: () => void 
           </div>
           {slPnl !== null && (
             <p className="hint">
-              예상 손익 <span className={`mono ${pnlClass(slPnl)}`}>{formatSigned(slPnl)} USDT</span>
+              예상 손익{' '}
+              <span className={`mono ${pnlClass(slPnl)}`}>
+                {formatSigned(slPnl, info.moneyDigits)} {info.currency}
+              </span>
             </p>
           )}
           <p className="hint">비워두면 해당 주문이 해제됩니다. 체결은 시장가(테이커 수수료)로 처리됩니다.</p>
@@ -79,6 +88,9 @@ export function BottomPanel({ game }: { game: Game }) {
   const [tpslOpen, setTpslOpen] = useState(false);
   const [closePrice, setClosePrice] = useState('');
   const ex = game.exchange;
+  const info = game.info;
+  const money = (v: number) => `${formatNumber(v, info.moneyDigits)} ${info.currency}`;
+  const qty = (v: number) => formatNumber(v, info.qtyDigits);
   const precision = game.round?.pricePrecision ?? 1;
   if (!ex) return <section className="bottom-panel" />;
 
@@ -96,7 +108,7 @@ export function BottomPanel({ game }: { game: Game }) {
     <section className="bottom-panel">
       <div className="bottom-tabs">
         <button className={tab === 'position' ? 'active' : ''} onClick={() => setTab('position')}>
-          포지션({p ? 1 : 0})
+          {info.futures ? '포지션' : '보유'}({p ? 1 : 0})
         </button>
         <button className={tab === 'orders' ? 'active' : ''} onClick={() => setTab('orders')}>
           미체결 주문({ex.orders.length})
@@ -119,9 +131,9 @@ export function BottomPanel({ game }: { game: Game }) {
                   <th>수량</th>
                   <th>진입가</th>
                   <th>현재가</th>
-                  <th>청산가</th>
-                  <th>증거금</th>
-                  <th>미실현 손익(ROE)</th>
+                  {info.futures && <th>청산가</th>}
+                  <th>{info.futures ? '증거금' : '매입 금액'}</th>
+                  <th>{info.futures ? '미실현 손익(ROE)' : '평가 손익'}</th>
                   <th>익절/손절</th>
                   <th>포지션 청산</th>
                 </tr>
@@ -130,18 +142,22 @@ export function BottomPanel({ game }: { game: Game }) {
                 <tr>
                   <td>
                     <span className={`side-bar ${p.side === 'long' ? 'up-bg' : 'down-bg'}`} />
-                    <b>BTCUSDT</b> <span className="muted">무기한</span>
-                    <div className={`small ${p.side === 'long' ? 'up' : 'down'}`}>
-                      {p.side === 'long' ? '롱' : '숏'} · 격리 {p.leverage}x
-                    </div>
+                    <b>{info.symbol}</b> <span className="muted">{info.product}</span>
+                    {info.futures && (
+                      <div className={`small ${p.side === 'long' ? 'up' : 'down'}`}>
+                        {p.side === 'long' ? '롱' : '숏'} · 격리 {p.leverage}x
+                      </div>
+                    )}
                   </td>
-                  <td className={`mono ${p.side === 'long' ? 'up' : 'down'}`}>{formatNumber(p.qty, 4)} BTC</td>
+                  <td className={`mono ${p.side === 'long' ? 'up' : 'down'}`}>
+                    {qty(p.qty)} {info.qtyUnit}
+                  </td>
                   <td className="mono">{formatNumber(p.entryPrice, precision)}</td>
                   <td className="mono">{formatNumber(ex.lastPrice, precision)}</td>
-                  <td className="mono liq">{formatNumber(ex.liquidationPrice() ?? 0, precision)}</td>
-                  <td className="mono">{formatNumber(p.margin)} USDT</td>
+                  {info.futures && <td className="mono liq">{formatNumber(ex.liquidationPrice() ?? 0, precision)}</td>}
+                  <td className="mono">{money(p.margin)}</td>
                   <td className={`mono ${pnlClass(ex.unrealizedPnl())}`}>
-                    {formatSigned(ex.unrealizedPnl())} USDT
+                    {formatSigned(ex.unrealizedPnl(), info.moneyDigits)} {info.currency}
                     <div className="small">({formatSigned((ex.unrealizedPnl() / p.margin) * 100)}%)</div>
                   </td>
                   <td className="mono">
@@ -205,8 +221,8 @@ export function BottomPanel({ game }: { game: Game }) {
                     <td>지정가</td>
                     <td className={o.side === 'buy' ? 'up' : 'down'}>{o.side === 'buy' ? '매수' : '매도'}</td>
                     <td className="mono">{formatNumber(o.price, precision)}</td>
-                    <td className="mono">{formatNumber(o.qty, 4)}</td>
-                    <td className="mono">{formatNumber(o.qty * o.price)} USDT</td>
+                    <td className="mono">{qty(o.qty)}</td>
+                    <td className="mono">{money(o.qty * o.price)}</td>
                     <td>{o.reduceOnly ? '예' : '아니오'}</td>
                     <td className="mono">
                       {o.takeProfit !== null ? formatNumber(o.takeProfit, precision) : '--'} /{' '}
@@ -246,8 +262,8 @@ export function BottomPanel({ game }: { game: Game }) {
                     <td>{REASON_LABEL[f.reason]}</td>
                     <td className={f.side === 'buy' ? 'up' : 'down'}>{f.side === 'buy' ? '매수' : '매도'}</td>
                     <td className="mono">{formatNumber(f.price, precision)}</td>
-                    <td className="mono">{formatNumber(f.qty, 4)}</td>
-                    <td className="mono">{formatNumber(f.fee, 4)}</td>
+                    <td className="mono">{qty(f.qty)}</td>
+                    <td className="mono">{formatNumber(f.fee, info.futures ? 4 : info.moneyDigits)}</td>
                     <td className={`mono ${pnlClass(f.realizedPnl)}`}>{formatSigned(f.realizedPnl)}</td>
                   </tr>
                 ))}
@@ -266,7 +282,7 @@ export function BottomPanel({ game }: { game: Game }) {
                   <th>진입 시각</th>
                   <th>종료 시각</th>
                   <th>평균 진입가</th>
-                  <th>평균 청산가</th>
+                  <th>{info.futures ? '평균 청산가' : '평균 매도가'}</th>
                   <th>최대 수량</th>
                   <th>수수료</th>
                   <th>순손익</th>
@@ -278,14 +294,16 @@ export function BottomPanel({ game }: { game: Game }) {
                   const net = t.pnl - t.fees;
                   return (
                     <tr key={t.id}>
-                      <td className={t.side === 'long' ? 'up' : 'down'}>{t.side === 'long' ? '롱' : '숏'}</td>
+                      <td className={t.side === 'long' ? 'up' : 'down'}>{info.futures ? (t.side === 'long' ? '롱' : '숏') : '매수'}</td>
                       <td className="mono">{formatDateTime(t.openTime)}</td>
                       <td className="mono">{formatDateTime(t.closeTime!)}</td>
                       <td className="mono">{formatNumber(t.entryPrice, precision)}</td>
                       <td className="mono">{formatNumber(t.exitPrice, precision)}</td>
-                      <td className="mono">{formatNumber(t.maxQty, 4)}</td>
-                      <td className="mono">{formatNumber(t.fees, 4)}</td>
-                      <td className={`mono ${pnlClass(net)}`}>{formatSigned(net)} USDT</td>
+                      <td className="mono">{qty(t.maxQty)}</td>
+                      <td className="mono">{formatNumber(t.fees, info.futures ? 4 : info.moneyDigits)}</td>
+                      <td className={`mono ${pnlClass(net)}`}>
+                        {formatSigned(net, info.moneyDigits)} {info.currency}
+                      </td>
                       <td>{t.closeReason ? REASON_LABEL[t.closeReason] : '-'}</td>
                     </tr>
                   );

@@ -135,7 +135,7 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
       chart.removeOverlay({ groupId: DRAWING_GROUP });
       chart.removeOverlay({ groupId: TRADE_GROUP });
       chart.removeOverlay({ groupId: FILL_GROUP });
-      chart.setSymbol({ ticker: `BTCUSDT-${game.round!.roundId}`, pricePrecision: game.round!.pricePrecision, volumePrecision: 3 });
+      chart.setSymbol({ ticker: `${game.round!.market}-${game.round!.roundId}`, pricePrecision: game.round!.pricePrecision, volumePrecision: 3 });
       chart.resetData();
       setChartVersion((v) => v + 1);
     });
@@ -144,7 +144,7 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
     resize.observe(containerRef.current!);
 
     if (game.round) {
-      chart.setSymbol({ ticker: `BTCUSDT-${game.round.roundId}`, pricePrecision: game.round.pricePrecision, volumePrecision: 3 });
+      chart.setSymbol({ ticker: `${game.round.market}-${game.round.roundId}`, pricePrecision: game.round.pricePrecision, volumePrecision: 3 });
     }
     chart.setPeriod(toPeriod(timeframeRef.current));
 
@@ -198,10 +198,12 @@ export function ChartView({ game, version, view, onViewChange, mobile = false }:
     if (p) {
       const color = p.side === 'long' ? COLORS.up : COLORS.down;
       const pnl = ex.unrealizedPnl();
+      const info = game.info;
+      const sideLabel = info.futures ? (p.side === 'long' ? '롱' : '숏') : '보유';
       if (shown('entry')) lines.push({
         value: p.entryPrice,
         data: {
-          label: `${p.side === 'long' ? '롱' : '숏'} ${formatNumber(p.qty, 4)}  ${pnl >= 0 ? '+' : ''}${formatNumber(pnl)} USDT`,
+          label: `${sideLabel} ${formatNumber(p.qty, info.qtyDigits)}${info.futures ? '' : info.qtyUnit}  ${pnl >= 0 ? '+' : ''}${formatNumber(pnl, info.moneyDigits)} ${info.currency}`,
           color,
           priceText: formatNumber(p.entryPrice, precision),
           dashed: false,

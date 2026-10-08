@@ -372,8 +372,11 @@ export class Store {
       );
   }
 
-  listRounds(userId: string): RoundRecord[] {
-    const rows = this.db.prepare('SELECT * FROM rounds WHERE user_id = ? ORDER BY played_at DESC').all(userId) as Row[];
+  /** 시장별로 따로 본다 (통화와 규칙이 달라 섞으면 의미가 없다) */
+  listRounds(userId: string, market: Market = 'coin'): RoundRecord[] {
+    const rows = this.db
+      .prepare('SELECT * FROM rounds WHERE user_id = ? AND market = ? ORDER BY played_at DESC')
+      .all(userId, market) as Row[];
     return rows.map(toRecord);
   }
 
@@ -386,15 +389,15 @@ export class Store {
     return this.db.prepare('DELETE FROM rounds WHERE id = ? AND user_id = ?').run(id, userId).changes > 0;
   }
 
-  ranking(sort: RankingSort) {
+  ranking(sort: RankingSort, market: Market = 'coin') {
     const rows = this.db
       .prepare(
         `SELECT u.id AS user_id, u.nickname, r.return_pct, r.trade_count, r.win_count
          FROM rounds r JOIN users u ON u.id = r.user_id
-         WHERE u.nickname IS NOT NULL
+         WHERE u.nickname IS NOT NULL AND r.market = ?
          ORDER BY r.played_at`,
       )
-      .all() as { user_id: string; nickname: string; return_pct: number; trade_count: number; win_count: number }[];
+      .all(market) as { user_id: string; nickname: string; return_pct: number; trade_count: number; win_count: number }[];
 
     const byUser = new Map<string, { nickname: string; returns: number[]; tradeCount: number; winCount: number }>();
     for (const r of rows) {

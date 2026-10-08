@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { INITIAL_BALANCE } from '../../engine/exchange.ts';
 import type { Game } from '../../game/game.ts';
 import { formatDateTime, formatDuration, formatNumber, formatSigned, pnlClass, weekday } from '../../format.ts';
 import { SPEEDS } from '../../settings.ts';
@@ -12,7 +11,8 @@ function Clock({ game }: { game: Game }) {
     return () => clearInterval(timer);
   }, []);
   const time = game.simTime();
-  const elapsed = game.round ? Math.max(0, time - game.round.startTime) : 0;
+  // 주식은 장 마감과 주말을 건너뛰므로 진행한 봉 수(정규장 분)로 센다
+  const elapsed = !game.round ? 0 : game.info.futures ? Math.max(0, time - game.round.startTime) : (game.exchange?.candleCount ?? 0) * 60_000;
   return (
     <span className="m-clock mono">
       {formatDateTime(time, true).slice(5)} ({weekday(time)}) · {formatDuration(elapsed)}
@@ -70,7 +70,7 @@ export function MobileHeader(props: HeaderProps) {
   const precision = round?.pricePrecision ?? 1;
   const priceUp = !prev || !last || last.close >= prev.close;
   const inRound = ex && phase !== 'setup' && phase !== 'loading';
-  const roundReturn = ex ? (ex.equity() / INITIAL_BALANCE - 1) * 100 : 0;
+  const roundReturn = ex ? (ex.equity() / ex.rules.initialBalance - 1) * 100 : 0;
 
   if (page !== 'trade') {
     return (
@@ -91,8 +91,8 @@ export function MobileHeader(props: HeaderProps) {
     <header className="m-header">
       <div className="m-row">
         <div className="m-symbol">
-          <span className="symbol-name">BTCUSDT</span>
-          <span className="symbol-sub">무기한</span>
+          <span className="symbol-name">{game.info.symbol}</span>
+          <span className="symbol-sub">{game.info.product}</span>
         </div>
         {inRound && last && (
           <span className={`m-price mono ${priceUp ? 'up' : 'down'}`}>{formatNumber(last.close, precision)}</span>

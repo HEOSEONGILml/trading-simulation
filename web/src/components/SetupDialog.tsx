@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import type { RoundSettings } from '../api.ts';
-import { HISTORY_OPTIONS, SPEEDS, type SetupSettings } from '../settings.ts';
-
-const EARLIEST_DATE = '2019-09-10';
+import { MARKETS, MARKET_INFO, type Market } from '../market.ts';
+import { SPEEDS, fitSetup, type SetupSettings } from '../settings.ts';
 
 interface Props {
   initial: SetupSettings;
   speed: number;
+  /** 지금 라운드를 열 수 있는 시장. 나머지는 "준비 중" */
+  available: Market[];
   loading: boolean;
   canClose: boolean;
   onClose: () => void;
@@ -19,17 +20,19 @@ const toTime = (date: string, endOfDay = false) => {
   return new Date(y, m - 1, d + (endOfDay ? 1 : 0)).getTime() - (endOfDay ? 1 : 0);
 };
 
-export function SetupDialog({ initial, speed: initialSpeed, loading, canClose, onClose, onStart }: Props) {
-  const [setup, setSetup] = useState(initial);
+export function SetupDialog({ initial, speed: initialSpeed, available, loading, canClose, onClose, onStart }: Props) {
+  const [setup, setSetup] = useState(() => fitSetup(available.includes(initial.market) ? initial : { ...initial, market: 'coin' }));
   const [speed, setSpeed] = useState(initialSpeed);
+  const info = MARKET_INFO[setup.market];
   const today = new Date().toISOString().slice(0, 10);
-  const valid = setup.rangeStart && setup.rangeEnd && setup.rangeStart <= setup.rangeEnd;
+  const valid = available.includes(setup.market) && setup.rangeStart && setup.rangeEnd && setup.rangeStart <= setup.rangeEnd;
 
   const submit = () => {
     if (!valid) return;
     onStart(
       setup,
       {
+        market: setup.market,
         rangeStart: toTime(setup.rangeStart),
         rangeEnd: toTime(setup.rangeEnd, true),
         historyMinutes: setup.historyMinutes,
@@ -52,16 +55,33 @@ export function SetupDialog({ initial, speed: initialSpeed, loading, canClose, o
           )}
         </div>
         <div className="modal-body">
-          <p className="hint">
-            지정한 기간에서 무작위 시점을 골라 BTCUSDT 무기한 선물 1분봉 차트를 보여줍니다. 시작하면 1분봉이 하나씩 추가됩니다.
-          </p>
+          <div className="form-row">
+            <label>섹션</label>
+            <div className="chips market-chips">
+              {MARKETS.map((m) => {
+                const ready = available.includes(m);
+                return (
+                  <button
+                    key={m}
+                    className={`chip ${setup.market === m ? 'active' : ''}`}
+                    disabled={!ready}
+                    onClick={() => setSetup(fitSetup({ ...setup, market: m }))}
+                  >
+                    {MARKET_INFO[m].label}
+                    {!ready && <span className="chip-note"> 준비 중</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="hint">{info.description}</p>
+          </div>
 
           <div className="form-row">
             <label>시작 시점 범위</label>
             <div className="date-range">
               <input
                 type="date"
-                min={EARLIEST_DATE}
+                min={info.earliestDate}
                 max={today}
                 value={setup.rangeStart}
                 onChange={(e) => setSetup({ ...setup, rangeStart: e.target.value })}
@@ -69,7 +89,7 @@ export function SetupDialog({ initial, speed: initialSpeed, loading, canClose, o
               <span>~</span>
               <input
                 type="date"
-                min={EARLIEST_DATE}
+                min={info.earliestDate}
                 max={today}
                 value={setup.rangeEnd}
                 onChange={(e) => setSetup({ ...setup, rangeEnd: e.target.value })}
@@ -78,9 +98,9 @@ export function SetupDialog({ initial, speed: initialSpeed, loading, canClose, o
           </div>
 
           <div className="form-row">
-            <label>시작 전 보여줄 과거 구간</label>
+            <label>시작 전 보여줄 과거 구간{info.futures ? '' : ' (정규장 기준)'}</label>
             <div className="chips">
-              {HISTORY_OPTIONS.map((o) => (
+              {info.historyOptions.map((o) => (
                 <button
                   key={o.minutes}
                   className={`chip ${setup.historyMinutes === o.minutes ? 'active' : ''}`}
@@ -118,7 +138,7 @@ export function SetupDialog({ initial, speed: initialSpeed, loading, canClose, o
               />
               가격 가리기
             </label>
-            <p className="hint">시작가를 1,000 단위의 무작위 값으로 바꾸고 모든 가격에 같은 비율을 적용합니다. 변동률은 그대로입니다.</p>
+            <p className="hint">시작가를 무작위의 깔끔한 값으로 바꾸고 모든 가격에 같은 비율을 적용합니다. 변동률은 그대로입니다.</p>
           </div>
 
           {!valid && <p className="hint warn">기간을 올바르게 선택해주세요.</p>}

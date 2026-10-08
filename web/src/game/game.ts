@@ -1,6 +1,7 @@
 // 라운드 진행 컨트롤러: 데이터 수신, 재생 타이머, 거래소 연결
 
 import { api, type RoundRecord, type RoundSettings, type RoundStart } from '../api.ts';
+import { marketInfo } from '../market.ts';
 import { Exchange, ExchangeError, type ExchangeSnapshot, type OrderOptions } from '../engine/exchange.ts';
 import { MINUTE, type Candle, type ExchangeEvent, type OrderSide } from '../engine/types.ts';
 
@@ -37,6 +38,11 @@ const SAVE_INTERVAL_MS = 5000;
 export class Game {
   phase: Phase = 'resuming';
   round: RoundStart | null = null;
+
+  /** 진행 중인 라운드의 시장 표시 정보 (라운드가 없으면 코인) */
+  get info() {
+    return marketInfo(this.round?.market);
+  }
   settings: RoundSettings | null = null;
   candles: Candle[] = [];
   exchange: Exchange | null = null;
@@ -159,7 +165,7 @@ export class Game {
         ended = res.ended;
       }
 
-      const exchange = saved ? Exchange.restore(saved.exchange) : this.newExchange(round);
+      const exchange = saved ? Exchange.restore(saved.exchange, marketInfo(round.market).rules) : this.newExchange(round);
       const revealed = future.slice(0, revealedCount);
       this.load(saved ? 'paused' : 'ready', round, settings, exchange, revealed, future.slice(revealedCount), ended);
       if (saved) this.toast('info', '진행하던 라운드를 이어서 합니다. ▶ 재개를 누르면 계속됩니다.');
@@ -171,11 +177,14 @@ export class Game {
   }
 
   private newExchange(round: RoundStart) {
-    const exchange = new Exchange(round.history[round.history.length - 1].close, round.startTime);
-    try {
-      exchange.setLeverage(this.leverage);
-    } catch {
-      // 잘못 저장된 값이면 기본 레버리지를 쓴다
+    const info = marketInfo(round.market);
+    const exchange = new Exchange(round.history[round.history.length - 1].close, round.startTime, info.rules);
+    if (info.futures) {
+      try {
+        exchange.setLeverage(this.leverage);
+      } catch {
+        // 잘못 저장된 값이면 기본 레버리지를 쓴다
+      }
     }
     return exchange;
   }

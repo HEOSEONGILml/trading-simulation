@@ -221,9 +221,11 @@ export function buildApp(options: { dbPath: string; staticDir?: string; sources?
 
   // ---------- 기록, 랭킹 ----------
 
-  app.get('/api/history', async (req) => {
+  const marketOf = (value: unknown): Market => (MARKETS.includes(value as Market) ? (value as Market) : 'coin');
+
+  app.get<{ Querystring: { market?: string } }>('/api/history', async (req) => {
     const user = requirePlayer(req);
-    const records = store.listRounds(user.id);
+    const records = store.listRounds(user.id, marketOf(req.query.market));
     return { summary: summarize(records), rounds: records.map(({ trades: _trades, ...rest }) => rest) };
   });
 
@@ -240,11 +242,12 @@ export function buildApp(options: { dbPath: string; staticDir?: string; sources?
     return { ok: true };
   });
 
-  app.get<{ Querystring: { sort?: string } }>('/api/ranking', async (req) => {
+  app.get<{ Querystring: { sort?: string; market?: string } }>('/api/ranking', async (req) => {
     const user = requirePlayer(req);
     const sort = RANKING_SORTS.includes(req.query.sort as RankingSort) ? (req.query.sort as RankingSort) : 'compound';
-    const entries = store.ranking(sort).map(({ userId, ...e }) => ({ ...e, isMe: userId === user.id }));
-    return { sort, minRounds: RANKING_MIN_ROUNDS, entries };
+    const market = marketOf(req.query.market);
+    const entries = store.ranking(sort, market).map(({ userId, ...e }) => ({ ...e, isMe: userId === user.id }));
+    return { sort, market, minRounds: RANKING_MIN_ROUNDS, entries };
   });
 
   if (options.staticDir && existsSync(options.staticDir)) {

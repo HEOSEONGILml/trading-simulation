@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.ts';
 import { coinSource } from './markets/coin.ts';
+import { fakeStockSource } from './markets/fake.ts';
 import { TossInvestClient, tossSource } from './markets/tossinvest.ts';
 import type { Market, MarketSource } from './markets/types.ts';
 
@@ -18,6 +19,10 @@ if (STOCKS_ENABLED === '1' && TOSSINVEST_CLIENT_ID && TOSSINVEST_CLIENT_SECRET) 
   const client = new TossInvestClient({ clientId: TOSSINVEST_CLIENT_ID, clientSecret: TOSSINVEST_CLIENT_SECRET });
   sources.kr = tossSource('kr', client);
   sources.us = tossSource('us', client);
+} else if (process.env.STOCKS_FAKE === '1') {
+  // 개발용: 토스증권 키 없이 주식 화면을 확인한다
+  sources.kr = fakeStockSource('kr');
+  sources.us = fakeStockSource('us');
 }
 
 const app = buildApp({ dbPath, staticDir, sources });

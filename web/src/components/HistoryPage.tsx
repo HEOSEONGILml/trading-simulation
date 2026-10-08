@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type HistorySummary, type RoundRecord } from '../api.ts';
 import { formatDateTime, formatDuration, formatNumber, formatSigned, pnlClass } from '../format.ts';
+import { MARKETS, MARKET_INFO, type Market } from '../market.ts';
 
 /** 미실현 수익/손실 시간. 집계 기능 이전의 기록은 '-' */
 function PnlTime({ profit, loss }: { profit: number | null; loss: number | null }) {
@@ -15,16 +16,19 @@ function PnlTime({ profit, loss }: { profit: number | null; loss: number | null 
 export function HistoryPage({ mobile = false }: { mobile?: boolean }) {
   const [data, setData] = useState<{ summary: HistorySummary; rounds: RoundRecord[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [market, setMarket] = useState<Market>('coin');
+  const info = MARKET_INFO[market];
 
   const load = () =>
     api
-      .history()
+      .history(market)
       .then(setData)
       .catch((err: Error) => setError(err.message));
 
   useEffect(() => {
+    setData(null);
     void load();
-  }, []);
+  }, [market]);
 
   const remove = async (id: string) => {
     if (!confirm('이 라운드 기록을 삭제할까요?')) return;
@@ -38,6 +42,13 @@ export function HistoryPage({ mobile = false }: { mobile?: boolean }) {
 
   return (
     <div className="history-page">
+      <div className="chips market-chips">
+        {MARKETS.map((m) => (
+          <button key={m} className={`chip ${market === m ? 'active' : ''}`} onClick={() => setMarket(m)}>
+            {MARKET_INFO[m].label}
+          </button>
+        ))}
+      </div>
       <h2>누적 통계</h2>
       <div className="stat-grid wide">
         <div className="stat-card">
@@ -79,7 +90,9 @@ export function HistoryPage({ mobile = false }: { mobile?: boolean }) {
         </div>
         <div className="stat-card">
           <span>총 수수료</span>
-          <b className="mono">{formatNumber(s.totalFees)} USDT</b>
+          <b className="mono">
+            {formatNumber(s.totalFees, info.moneyDigits)} {info.currency}
+          </b>
         </div>
         <div className="stat-card">
           <span>총 훈련 구간</span>
@@ -102,7 +115,7 @@ export function HistoryPage({ mobile = false }: { mobile?: boolean }) {
             <div className="m-card-head">
               <b className={`mono ${pnlClass(r.returnPct)}`}>{formatSigned(r.returnPct)}%</b>
               <span className={`mono small ${pnlClass(r.endEquity - r.startEquity)}`}>
-                {formatSigned(r.endEquity - r.startEquity)} USDT
+                {formatSigned(r.endEquity - r.startEquity, info.moneyDigits)} {info.currency}
               </span>
               <div className="header-spacer" />
               <button className="link-btn" onClick={() => remove(r.id)}>

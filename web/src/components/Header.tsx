@@ -12,7 +12,8 @@ function SimClock({ game }: { game: Game }) {
     return () => clearInterval(timer);
   }, []);
   const time = game.simTime();
-  const elapsed = game.round ? time - game.round.startTime : 0;
+  // 주식은 장 마감과 주말을 건너뛰므로 진행한 봉 수(정규장 분)로 센다
+  const elapsed = !game.round ? 0 : game.info.futures ? time - game.round.startTime : (game.exchange?.candleCount ?? 0) * 60_000;
   return (
     <>
       <div className="stat">
@@ -22,7 +23,7 @@ function SimClock({ game }: { game: Game }) {
         </span>
       </div>
       <div className="stat">
-        <span className="stat-label">라운드 경과</span>
+        <span className="stat-label">{game.info.futures ? '라운드 경과' : '진행한 장 시간'}</span>
         <span className="stat-value mono">{formatDuration(Math.max(0, elapsed))}</span>
       </div>
     </>
@@ -118,8 +119,8 @@ export function Header(props: HeaderProps) {
       {page === 'trade' && inRound && (
         <>
           <div className="symbol">
-            <span className="symbol-name">BTCUSDT</span>
-            <span className="symbol-sub">무기한</span>
+            <span className="symbol-name">{game.info.symbol}</span>
+            <span className="symbol-sub">{game.info.product}</span>
           </div>
           <div className={`last-price mono ${priceUp ? 'up' : 'down'}`}>{last ? formatNumber(last.close, precision) : '-'}</div>
           <SimClock game={game} />
