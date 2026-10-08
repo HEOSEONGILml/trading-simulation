@@ -7,6 +7,9 @@ const SYMBOL = 'BTCUSDT';
 export const MINUTE = 60_000;
 const MAX_LIMIT = 1500;
 
+export type Interval = '1m' | '15m';
+const INTERVAL_MS: Record<Interval, number> = { '1m': MINUTE, '15m': 15 * MINUTE };
+
 // BTCUSDT 무기한 선물 상장 직후 1분봉은 거래가 거의 없어 2019-09-10부터 사용
 export const EARLIEST_TIME = Date.UTC(2019, 8, 10);
 
@@ -30,15 +33,20 @@ async function request(params: URLSearchParams): Promise<unknown[][]> {
   throw lastError;
 }
 
-/** startTime(포함)부터 최대 count개의 1분봉을 가져온다. endTime(포함)을 넘지 않는다. */
-export async function fetchCandles(startTime: number, count: number, endTime?: number): Promise<Candle[]> {
+/** startTime(포함)부터 최대 count개의 봉(기본 1분봉)을 가져온다. endTime(포함)을 넘지 않는다. */
+export async function fetchCandles(
+  startTime: number,
+  count: number,
+  endTime?: number,
+  interval: Interval = '1m',
+): Promise<Candle[]> {
   const result: Candle[] = [];
   let cursor = startTime;
   while (result.length < count) {
     const limit = Math.min(MAX_LIMIT, count - result.length);
     const params = new URLSearchParams({
       symbol: SYMBOL,
-      interval: '1m',
+      interval,
       startTime: String(cursor),
       limit: String(limit),
     });
@@ -50,7 +58,7 @@ export async function fetchCandles(startTime: number, count: number, endTime?: n
       result.push([Number(r[0]), Number(r[1]), Number(r[2]), Number(r[3]), Number(r[4]), Number(r[5])]);
     }
     if (closed.length < limit) break;
-    cursor = result[result.length - 1][0] + MINUTE;
+    cursor = result[result.length - 1][0] + INTERVAL_MS[interval];
   }
   return result;
 }

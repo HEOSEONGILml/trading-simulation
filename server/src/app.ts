@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
@@ -237,6 +238,14 @@ export function buildApp(options: { dbPath: string; staticDir?: string }) {
     const sort = RANKING_SORTS.includes(req.query.sort as RankingSort) ? (req.query.sort as RankingSort) : 'compound';
     const entries = store.ranking(sort).map(({ userId, ...e }) => ({ ...e, isMe: userId === user.id }));
     return { sort, minRounds: RANKING_MIN_ROUNDS, entries };
+  });
+
+  // 차트 퀴즈 이미지 (스레드가 공개 URL로 가져간다, src/quiz/run.ts)
+  const quizDir = join(dirname(options.dbPath), 'quiz');
+  app.get<{ Params: { file: string } }>('/quiz/:file', async (req, reply) => {
+    const path = join(quizDir, req.params.file);
+    if (!/^\d+\.png$/.test(req.params.file) || !existsSync(path)) return reply.status(404).send({ error: 'Not Found' });
+    return reply.type('image/png').header('cache-control', 'public, max-age=86400').send(readFileSync(path));
   });
 
   if (options.staticDir && existsSync(options.staticDir)) {

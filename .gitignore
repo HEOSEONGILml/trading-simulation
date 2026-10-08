@@ -227,3 +227,6 @@ server/data/
 
 # 운영 서버 DB 백업
 backups/
+
+# 운영 비밀 값 (스레드, X 토큰)
+deploy/secrets.env
