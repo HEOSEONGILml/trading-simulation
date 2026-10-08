@@ -1,7 +1,9 @@
 import type { DeepPartial, Styles } from 'klinecharts';
 
+import { MINIAPP } from '../env.ts';
+
 // 바이낸스 선물 다크 테마 색상
-export const COLORS = {
+const DARK = {
   bg: '#181A20',
   grid: '#22262D',
   border: '#2B3139',
@@ -12,6 +14,21 @@ export const COLORS = {
   yellow: '#F0B90B',
   crosshair: '#5E6673',
 };
+
+// 토스 미니앱 라이트 테마 (styles.css 의 html[data-theme='light'] 와 맞춘다). 상승은 빨강, 하락은 파랑
+const LIGHT: typeof DARK = {
+  bg: '#FFFFFF',
+  grid: '#F2F4F6',
+  border: '#E5E8EB',
+  text: '#191F28',
+  textSecondary: '#6B7684',
+  up: '#F04452',
+  down: '#3182F6',
+  yellow: '#3182F6',
+  crosshair: '#8B95A1',
+};
+
+export const COLORS = MINIAPP ? LIGHT : DARK;
 
 const FONT = "'IBM Plex Sans', 'BinancePlex', Arial, sans-serif";
 
@@ -81,7 +98,7 @@ export const chartStyles: DeepPartial<Styles> = {
     tickLine: { color: COLORS.border },
     tickText: { color: COLORS.textSecondary, family: FONT, size: 11 },
   },
-  separator: { color: COLORS.border, activeBackgroundColor: 'rgba(240,185,11,0.08)' },
+  separator: { color: COLORS.border, activeBackgroundColor: MINIAPP ? 'rgba(49,130,246,0.08)' : 'rgba(240,185,11,0.08)' },
   crosshair: {
     horizontal: {
       line: { color: COLORS.crosshair, dashedValue: [4, 3] },

@@ -250,7 +250,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border-bottom: 1px solid #22262d;
+  border-bottom: 1px solid var(--row-line);
 }
 .right {
   text-align: right;

@@ -12,7 +12,33 @@
   --yellow: #f0b90b;
   --yellow-hover: #fcd535;
   --liq: #e8a33d;
+  --hover: #363c45;
+  --row-line: #22262d;
+  --row-hover: #1e2329;
+  --on-primary: #181a20;
   color-scheme: dark;
+}
+
+/* 토스 미니앱: 라이트 모드 (출시 체크리스트 필수). main.tsx 에서 html[data-theme] 로 켠다 */
+html[data-theme='light'] {
+  --bg: #f2f4f6;
+  --panel: #ffffff;
+  --panel-2: #ffffff;
+  --input: #f2f4f6;
+  --border: #e5e8eb;
+  --text: #191f28;
+  --text-2: #6b7684;
+  --text-3: #8b95a1;
+  --up: #f04452;
+  --down: #3182f6;
+  --yellow: #3182f6;
+  --yellow-hover: #1b64da;
+  --liq: #e8590c;
+  --hover: #e5e8eb;
+  --row-line: #f2f4f6;
+  --row-hover: #f9fafb;
+  --on-primary: #ffffff;
+  color-scheme: light;
 }
 
 * {
@@ -188,11 +214,11 @@ button:disabled {
   white-space: nowrap;
 }
 .btn:hover:not(:disabled) {
-  background: #363c45;
+  background: var(--hover);
 }
 .btn-primary {
   background: var(--yellow);
-  color: #181a20;
+  color: var(--on-primary);
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--yellow-hover);
@@ -368,7 +394,7 @@ button:disabled {
   cursor: default;
 }
 .pill:hover:not(:disabled) {
-  background: #363c45;
+  background: var(--hover);
 }
 .order-tabs {
   display: flex;
@@ -582,12 +608,12 @@ button:disabled {
 }
 .table td {
   padding: 8px 12px;
-  border-top: 1px solid #22262d;
+  border-top: 1px solid var(--row-line);
   white-space: nowrap;
   vertical-align: middle;
 }
 .table tbody tr:hover {
-  background: #1e2329;
+  background: var(--row-hover);
 }
 .side-bar {
   display: inline-block;
@@ -958,7 +984,7 @@ button.dropdown-item {
 }
 .rank-1 {
   background: var(--yellow);
-  color: #181a20;
+  color: var(--on-primary);
 }
 .rank-2 {
   background: #b7bdc6;
@@ -973,7 +999,7 @@ button.dropdown-item {
   padding: 1px 5px;
   border-radius: 3px;
   background: var(--yellow);
-  color: #181a20;
+  color: var(--on-primary);
   font-size: 10px;
   font-weight: 600;
 }
