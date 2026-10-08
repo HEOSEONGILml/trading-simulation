@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Exchange, INITIAL_BALANCE, MAKER_FEE, TAKER_FEE } from './exchange.ts';
+import { Exchange, INITIAL_BALANCE, KR_STOCK_RULES, MAKER_FEE, TAKER_FEE, US_STOCK_RULES } from './exchange.ts';
 import { MINUTE, type Candle } from './types.ts';
 
 let t = 0;
@@ -190,5 +190,55 @@ describe('Exchange', () => {
     }
     expect(restored.summary()).toEqual(ex.summary());
     expect(restored.fills.map((f) => f.id)).toEqual(ex.fills.map((f) => f.id));
+  });
+});
+
+describe('Exchange 현물 (주식)', () => {
+  it('국내 주식: 1주 단위로 내림하고, 매도에만 거래세가 붙는다', () => {
+    const ex = new Exchange(50_000, 0, KR_STOCK_RULES);
+    ex.marketOrder('buy', 10.7);
+    expect(ex.position?.qty).toBe(10);
+    const buyFee = 10 * 50_000 * KR_STOCK_RULES.takerFee;
+    expect(ex.balance).toBeCloseTo(10_000_000 - 500_000 - buyFee);
+    ex.onCandle(candle(50_000, 51_000, 50_000, 51_000));
+    ex.closePosition();
+    const sellFee = 10 * 51_000 * (KR_STOCK_RULES.takerFee + KR_STOCK_RULES.sellTax);
+    expect(ex.position).toBeNull();
+    expect(ex.balance).toBeCloseTo(10_000_000 + 10_000 - buyFee - sellFee);
+    expect(ex.summary().startEquity).toBe(10_000_000);
+  });
+
+  it('공매도와 레버리지는 없고, 보유 수량보다 많이 팔 수 없다', () => {
+    const ex = new Exchange(100, 0, US_STOCK_RULES);
+    expect(ex.leverage).toBe(1);
+    expect(() => ex.setLeverage(2)).toThrow('레버리지가 없습니다');
+    expect(() => ex.marketOrder('sell', 1)).toThrow('보유 수량이 없습니다');
+    expect(ex.maxOpenNotional('sell')).toBe(0);
+    ex.marketOrder('buy', 5);
+    ex.marketOrder('sell', 8);
+    expect(ex.position).toBeNull();
+    expect(ex.fills[1].qty).toBe(5);
+  });
+
+  it('1주 미만 주문은 거절하고, 가격이 크게 떨어져도 강제 청산되지 않는다', () => {
+    const ex = new Exchange(100, 0, US_STOCK_RULES);
+    expect(() => ex.marketOrder('buy', 0.5)).toThrow('최소 1주');
+    ex.marketOrder('buy', 50);
+    ex.onCandle(candle(100, 100, 5, 6));
+    expect(ex.position?.qty).toBe(50);
+    expect(ex.trades.some((tr) => tr.liquidated)).toBe(false);
+    // 살 수 있는 최대 금액은 잔고 전부 (레버리지 1배, 수수료 제외)
+    const fresh = new Exchange(100, 0, US_STOCK_RULES);
+    expect(fresh.maxOpenNotional('buy')).toBeCloseTo(10_000 / (1 + US_STOCK_RULES.takerFee));
+  });
+
+  it('현물 상태도 저장 후 같은 규칙으로 이어서 할 수 있다', () => {
+    const ex = new Exchange(50_000, 0, KR_STOCK_RULES);
+    ex.marketOrder('buy', 3);
+    const restored = Exchange.restore(JSON.parse(JSON.stringify(ex.snapshot())), KR_STOCK_RULES);
+    expect(restored.rules).toBe(KR_STOCK_RULES);
+    expect(restored.equity()).toBeCloseTo(ex.equity());
+    expect(() => restored.marketOrder('sell', 5)).not.toThrow();
+    expect(restored.position).toBeNull();
   });
 });

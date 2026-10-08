@@ -1,4 +1,5 @@
-// 모의 선물 거래소: 격리 증거금, 단방향 포지션, 시장가/지정가, 손절/익절, 강제 청산
+// 모의 거래소: 격리 증거금, 단방향 포지션, 시장가/지정가, 손절/익절, 강제 청산
+// 규칙(ExchangeRules)에 따라 선물(코인)과 현물(주식: 레버리지 없음, 공매도 없음, 1주 단위, 매도세)을 함께 다룬다
 
 import { bracketFor, maxNotionalFor, MAX_LEVERAGE } from './brackets.ts';
 import {
@@ -18,6 +19,57 @@ export const INITIAL_BALANCE = 10_000;
 export const TAKER_FEE = 0.0005;
 export const MAKER_FEE = 0.0002;
 const EPSILON = 1e-9;
+
+export interface ExchangeRules {
+  initialBalance: number;
+  makerFee: number;
+  takerFee: number;
+  /** 매도 체결에만 붙는 세금 비율 (국내 주식 거래세) */
+  sellTax: number;
+  maxLeverage: number;
+  /** false 면 현물: 숏 진입이 없고 매도는 보유 수량까지만 */
+  allowShort: boolean;
+  /** 바이낸스 레버리지 구간(최대 규모, 유지증거금) 적용 여부. 현물은 청산이 없다 */
+  brackets: boolean;
+  /** 수량 단위. 0이면 제한 없음 (코인), 주식은 1주 */
+  qtyStep: number;
+}
+
+/** 코인: 바이낸스 BTCUSDT 무기한 선물 */
+export const FUTURES_RULES: ExchangeRules = {
+  initialBalance: INITIAL_BALANCE,
+  makerFee: MAKER_FEE,
+  takerFee: TAKER_FEE,
+  sellTax: 0,
+  maxLeverage: MAX_LEVERAGE,
+  allowShort: true,
+  brackets: true,
+  qtyStep: 0,
+};
+
+/** 국내 주식: 수수료 0.015%, 매도 시 거래세 약 0.2% (연도별로 다르지만 연습용으로 고정) */
+export const KR_STOCK_RULES: ExchangeRules = {
+  initialBalance: 10_000_000,
+  makerFee: 0.00015,
+  takerFee: 0.00015,
+  sellTax: 0.002,
+  maxLeverage: 1,
+  allowShort: false,
+  brackets: false,
+  qtyStep: 1,
+};
+
+/** 미국 주식: 수수료 0.1%, 세금 없음 */
+export const US_STOCK_RULES: ExchangeRules = {
+  initialBalance: 10_000,
+  makerFee: 0.001,
+  takerFee: 0.001,
+  sellTax: 0,
+  maxLeverage: 1,
+  allowShort: false,
+  brackets: false,
+  qtyStep: 1,
+};
 
 export class ExchangeError extends Error {}
 
@@ -59,9 +111,10 @@ export const REASON_LABEL: Record<FillReason, string> = {
 };
 
 export class Exchange {
+  readonly rules: ExchangeRules;
   /** 주문 가능 잔고 (격리 증거금과 주문 예약분 제외) */
-  balance = INITIAL_BALANCE;
-  leverage = 20;
+  balance: number;
+  leverage: number;
   position: Position | null = null;
   orders: Order[] = [];
   fills: Fill[] = [];
@@ -70,14 +123,18 @@ export class Exchange {
   /** 현재 시뮬레이션 시각 (마지막 캔들 마감 시각) */
   time: number;
   candleCount = 0;
-  peakEquity = INITIAL_BALANCE;
+  peakEquity: number;
   maxDrawdownPct = 0;
   /** 포지션을 들고 캔들을 마감했을 때 미실현 수익/손실 상태였던 시간 (분) */
   profitMinutes = 0;
   lossMinutes = 0;
   private nextId = 1;
 
-  constructor(lastPrice: number, time: number) {
+  constructor(lastPrice: number, time: number, rules: ExchangeRules = FUTURES_RULES) {
+    this.rules = rules;
+    this.balance = rules.initialBalance;
+    this.peakEquity = rules.initialBalance;
+    this.leverage = Math.min(20, rules.maxLeverage);
     this.lastPrice = lastPrice;
     this.time = time;
   }
@@ -101,8 +158,8 @@ export class Exchange {
     });
   }
 
-  static restore(s: ExchangeSnapshot): Exchange {
-    const ex = new Exchange(s.lastPrice, s.time);
+  static restore(s: ExchangeSnapshot, rules: ExchangeRules = FUTURES_RULES): Exchange {
+    const ex = new Exchange(s.lastPrice, s.time, rules);
     const copy = structuredClone(s);
     ex.balance = copy.balance;
     ex.leverage = copy.leverage;
@@ -142,7 +199,7 @@ export class Exchange {
   liquidationPrice(position = this.position): number | null {
     if (!position) return null;
     const { qty, entryPrice, margin } = position;
-    const { maintenanceRate, maintenanceAmount } = bracketFor(qty * entryPrice);
+    const { maintenanceRate, maintenanceAmount } = this.rules.brackets ? bracketFor(qty * entryPrice) : { maintenanceRate: 0, maintenanceAmount: 0 };
     const price =
       position.side === 'long'
         ? (qty * entryPrice - margin - maintenanceAmount) / (qty * (1 - maintenanceRate))
@@ -154,18 +211,22 @@ export class Exchange {
   maxOpenNotional(side: OrderSide, price = this.lastPrice): number {
     const p = this.position;
     const closable = p && p.side !== sideOf(side) ? p.qty * price : 0;
-    const proceeds = p && closable > 0 ? p.margin + this.unrealizedPnl(price) - closable * TAKER_FEE : 0;
-    const byBalance = ((this.balance + Math.max(0, proceeds)) * this.leverage) / (1 + this.leverage * TAKER_FEE);
+    // 현물은 매도로 새 포지션(공매도)을 열 수 없다
+    if (!this.rules.allowShort && side === 'sell') return closable;
+    const fee = this.rules.takerFee;
+    const proceeds = p && closable > 0 ? p.margin + this.unrealizedPnl(price) - closable * (fee + this.taxOn('sell')) : 0;
+    const byBalance = ((this.balance + Math.max(0, proceeds)) * this.leverage) / (1 + this.leverage * fee);
     const held = p && p.side === sideOf(side) ? p.qty * p.entryPrice : 0;
-    const byBracket = Math.max(0, maxNotionalFor(this.leverage) - held);
+    const byBracket = Math.max(0, this.maxNotional() - held);
     return closable + Math.min(byBalance, byBracket);
   }
 
   // ---------- 설정 ----------
 
   setLeverage(leverage: number) {
-    if (!Number.isInteger(leverage) || leverage < 1 || leverage > MAX_LEVERAGE) {
-      throw new ExchangeError(`레버리지는 1~${MAX_LEVERAGE}배 정수여야 합니다.`);
+    const max = this.rules.maxLeverage;
+    if (!Number.isInteger(leverage) || leverage < 1 || leverage > max) {
+      throw new ExchangeError(max === 1 ? '이 시장은 레버리지가 없습니다.' : `레버리지는 1~${max}배 정수여야 합니다.`);
     }
     if (this.position || this.orders.some((o) => !o.reduceOnly)) {
       throw new ExchangeError('포지션이나 미체결 주문이 있으면 레버리지를 바꿀 수 없습니다.');
@@ -176,16 +237,20 @@ export class Exchange {
   // ---------- 주문 ----------
 
   marketOrder(side: OrderSide, qty: number, options: OrderOptions = {}): Fill {
+    qty = this.roundQty(qty);
     this.validateQty(qty);
+    options = this.spotOptions(side, options);
     const price = this.lastPrice;
     const execQty = this.resolveQty(side, qty, !!options.reduceOnly);
     this.validateTpSl(sideOf(side), price, options.takeProfit ?? null, options.stopLoss ?? null);
-    this.validateOpen(side, execQty, price, TAKER_FEE, this.balance);
-    return this.executeFill(side, execQty, price, TAKER_FEE, 'market', this.time, options);
+    this.validateOpen(side, execQty, price, this.rules.takerFee, this.balance);
+    return this.executeFill(side, execQty, price, this.rules.takerFee, 'market', this.time, options);
   }
 
   limitOrder(side: OrderSide, price: number, qty: number, options: OrderOptions = {}): Order | Fill {
+    qty = this.roundQty(qty);
     this.validateQty(qty);
+    options = this.spotOptions(side, options);
     if (!(price > 0)) throw new ExchangeError('가격을 확인해주세요.');
     const reduceOnly = !!options.reduceOnly;
     const takeProfit = options.takeProfit ?? null;
@@ -200,14 +265,14 @@ export class Exchange {
       const p = this.position;
       if (!p || p.side === sideOf(side)) throw new ExchangeError('줄일 포지션이 없습니다.');
     }
-    const reserved = reduceOnly ? 0 : qty * price * (1 / this.leverage + MAKER_FEE);
+    const reserved = reduceOnly ? 0 : qty * price * (1 / this.leverage + this.rules.makerFee);
     if (!reduceOnly) {
       if (reserved > this.balance + EPSILON) throw new ExchangeError('잔고가 부족합니다.');
       const held = this.position?.side === sideOf(side) ? this.position.qty * this.position.entryPrice : 0;
       const pending = this.orders
         .filter((o) => o.side === side && !o.reduceOnly)
         .reduce((sum, o) => sum + o.qty * o.price, 0);
-      if (held + pending + qty * price > maxNotionalFor(this.leverage) + EPSILON) {
+      if (held + pending + qty * price > this.maxNotional() + EPSILON) {
         throw new ExchangeError(`${this.leverage}배에서 허용되는 최대 포지션 규모를 넘습니다.`);
       }
     }
@@ -242,7 +307,7 @@ export class Exchange {
   closePosition(fraction = 1): Fill {
     const p = this.position;
     if (!p) throw new ExchangeError('보유 포지션이 없습니다.');
-    const qty = fraction >= 1 ? p.qty : p.qty * fraction;
+    const qty = fraction >= 1 ? p.qty : Math.max(this.rules.qtyStep, this.roundQty(p.qty * fraction));
     return this.marketOrder(p.side === 'long' ? 'sell' : 'buy', qty, { reduceOnly: true });
   }
 
@@ -278,12 +343,12 @@ export class Exchange {
         qty = Math.min(qty, p.qty);
       }
       try {
-        this.validateOpen(order.side, qty, order.price, MAKER_FEE, this.balance);
+        this.validateOpen(order.side, qty, order.price, this.rules.makerFee, this.balance);
       } catch (err) {
         events.push({ type: 'cancel', message: `지정가 주문 취소: ${(err as Error).message}` });
         continue;
       }
-      const fill = this.executeFill(order.side, qty, order.price, MAKER_FEE, 'limit', c.time, {
+      const fill = this.executeFill(order.side, qty, order.price, this.rules.makerFee, 'limit', c.time, {
         takeProfit: order.takeProfit,
         stopLoss: order.stopLoss,
       });
@@ -310,7 +375,7 @@ export class Exchange {
     this.cancelAllOrders();
     const p = this.position;
     if (p) {
-      const fill = this.executeFill(p.side === 'long' ? 'sell' : 'buy', p.qty, this.lastPrice, TAKER_FEE, 'round_end', this.time, {});
+      const fill = this.executeFill(p.side === 'long' ? 'sell' : 'buy', p.qty, this.lastPrice, this.rules.takerFee, 'round_end', this.time, {});
       events.push(this.fillEvent(fill));
     }
     this.updateDrawdown();
@@ -321,7 +386,7 @@ export class Exchange {
     const closed = this.trades.filter((t) => t.closeTime !== null);
     return {
       candleCount: this.candleCount,
-      startEquity: INITIAL_BALANCE,
+      startEquity: this.rules.initialBalance,
       endEquity: this.equity(),
       realizedPnl: this.fills.reduce((s, f) => s + f.realizedPnl, 0),
       fees: this.fills.reduce((s, f) => s + f.fee, 0),
@@ -337,7 +402,30 @@ export class Exchange {
   // ---------- 내부 ----------
 
   private validateQty(qty: number) {
-    if (!(qty > 0) || !Number.isFinite(qty)) throw new ExchangeError('수량을 확인해주세요.');
+    if (!(qty > 0) || !Number.isFinite(qty)) {
+      throw new ExchangeError(this.rules.qtyStep ? `최소 ${this.rules.qtyStep}주부터 주문할 수 있습니다.` : '수량을 확인해주세요.');
+    }
+  }
+
+  /** 수량 단위로 내림 (주식은 1주) */
+  roundQty(qty: number): number {
+    const step = this.rules.qtyStep;
+    return step ? Math.floor(qty / step + 1e-9) * step : qty;
+  }
+
+  /** 현물 매도는 보유 수량을 줄이는 주문으로만 받는다 */
+  private spotOptions(side: OrderSide, options: OrderOptions): OrderOptions {
+    if (this.rules.allowShort || side !== 'sell') return options;
+    if (!this.position) throw new ExchangeError('매도할 보유 수량이 없습니다.');
+    return { ...options, reduceOnly: true };
+  }
+
+  private maxNotional(): number {
+    return this.rules.brackets ? maxNotionalFor(this.leverage) : Infinity;
+  }
+
+  private taxOn(side: OrderSide): number {
+    return side === 'sell' ? this.rules.sellTax : 0;
   }
 
   private resolveQty(side: OrderSide, qty: number, reduceOnly: boolean): number {
@@ -367,13 +455,13 @@ export class Exchange {
       openQty = qty - closeQty;
       const released = (p.margin * closeQty) / p.qty;
       const pnl = (price - p.entryPrice) * closeQty * dirOf(p.side);
-      available += released + pnl - closeQty * price * feeRate;
+      available += released + pnl - closeQty * price * (feeRate + this.taxOn(side));
     }
     if (openQty <= EPSILON) return;
     const required = openQty * price * (1 / this.leverage + feeRate);
     if (required > available + EPSILON) throw new ExchangeError('잔고가 부족합니다.');
     const held = p && p.side === sideOf(side) ? p.qty * p.entryPrice : 0;
-    if (held + openQty * price > maxNotionalFor(this.leverage) + EPSILON) {
+    if (held + openQty * price > this.maxNotional() + EPSILON) {
       throw new ExchangeError(`${this.leverage}배에서 허용되는 최대 포지션 규모를 넘습니다.`);
     }
   }
@@ -396,7 +484,7 @@ export class Exchange {
       const closeQty = Math.min(remaining, p.qty);
       const released = (p.margin * closeQty) / p.qty;
       const pnl = (price - p.entryPrice) * closeQty * dirOf(p.side);
-      const closeFee = closeQty * price * feeRate;
+      const closeFee = closeQty * price * (feeRate + this.taxOn(side));
       this.balance += released + pnl - closeFee;
       p.qty -= closeQty;
       p.margin -= released;
@@ -520,7 +608,7 @@ export class Exchange {
     if (worse(c.open, liq)) return this.liquidate(c.time, events);
     if (p.stopLoss !== null && worse(adverse, p.stopLoss) && !worse(p.stopLoss, liq)) {
       const price = worse(c.open, p.stopLoss) ? c.open : p.stopLoss;
-      const fill = this.executeFill(exitSide, p.qty, price, TAKER_FEE, 'stop_loss', c.time, {});
+      const fill = this.executeFill(exitSide, p.qty, price, this.rules.takerFee, 'stop_loss', c.time, {});
       events.push(this.fillEvent(fill));
       return;
     }
@@ -528,7 +616,7 @@ export class Exchange {
     const reached = (a: number, b: number) => a * dir >= b * dir;
     if (allowTakeProfit && p.takeProfit !== null && reached(favorable, p.takeProfit)) {
       const price = reached(c.open, p.takeProfit) ? c.open : p.takeProfit;
-      const fill = this.executeFill(exitSide, p.qty, price, TAKER_FEE, 'take_profit', c.time, {});
+      const fill = this.executeFill(exitSide, p.qty, price, this.rules.takerFee, 'take_profit', c.time, {});
       events.push(this.fillEvent(fill));
     }
   }
