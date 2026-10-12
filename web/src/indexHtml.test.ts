@@ -9,6 +9,10 @@ describe('index.html 검색 노출', () => {
     expect(html).toContain('<meta name="naver-site-verification" content="d4dd32b425b5a2d303164378183a7c7f1f0d6d85" />');
   });
 
+  it('구글 서치 콘솔 소유확인 태그가 있다', () => {
+    expect(html).toContain('<meta name="google-site-verification" content="8fS1iohSY0sxro3zqBhPIztpuy9Ly3MXQUfuXW0i_Lc" />');
+  });
+
   it('title·description·og에 한글명 블라인드캔들이 들어 있다', () => {
     expect(html).toMatch(/<title>[^<]*블라인드캔들[^<]*<\/title>/);
     expect(html).toMatch(/<meta name="description" content="[^"]*블라인드캔들/);
