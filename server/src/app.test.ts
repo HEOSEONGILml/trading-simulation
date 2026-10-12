@@ -269,3 +269,70 @@ test('검증 지표: 첫 판 완료율과 7일 재방문율', () => {
   assert.equal(m.last7Days.finishedRounds, 1);
   store.close();
 });
+
+test('검증 지표: 채널 분리, 기준 시각·테스트 계정 제외, 가입 주별 코호트', async () => {
+  const { toMarkdown } = await import('./metrics.ts');
+  const store = new Store(':memory:');
+  const kst = (m: number, d: number, h: number, min = 0) => Date.UTC(2026, m - 1, d, h - 9, min);
+  const now = kst(10, 28, 12);
+  const since = kst(10, 12, 0);
+  const user = (id: string, createdAt: number) => ({ id, username: id, nickname: id, passwordHash: 'x', createdAt });
+  const toss = (id: string, at: number) => {
+    store.createTossUser(user(id, at), `key-${id}`);
+    store.logEvent(id, 'signup', at);
+  };
+  const web = (id: string, at: number, username = id) => {
+    store.createUser({ ...user(id, at), username });
+    store.logEvent(id, 'signup', at);
+  };
+
+  web('secret-old', kst(10, 10, 9)); // 기준 시각 이전 가입 → 제외
+  toss('secret-tx', kst(10, 15, 9)); // 지정한 테스트 계정 → 제외
+  // 10-12 주 toss 3명
+  toss('secret-t1', kst(10, 13, 10));
+  store.logEvent('secret-t1', 'round_start', kst(10, 13, 10, 5));
+  store.logEvent('secret-t1', 'round_finish', kst(10, 13, 10, 30));
+  store.logVisit('secret-t1', kst(10, 14, 8)); // 다음 날 방문 → D1·7일 재방문
+  toss('secret-t2', kst(10, 13, 23));
+  store.logEvent('secret-t2', 'round_start', kst(10, 13, 23, 30));
+  store.logEvent('secret-t2', 'round_finish', kst(10, 14, 0, 10)); // 자정 넘어 끝낸 판은 재방문이 아니다
+  toss('secret-t3', kst(10, 14, 9));
+  store.logEvent('secret-t3', 'round_start', kst(10, 25, 9)); // 가입 7일 뒤 시작 → 코호트 첫 판에서 빠짐
+  // 10-26 주 toss 1명 (미성숙)
+  toss('secret-t4', kst(10, 27, 9));
+  store.logEvent('secret-t4', 'round_start', kst(10, 27, 9, 5));
+  store.logVisit('secret-t4', kst(10, 28, 9));
+  // 아이디가 toss_ 로 시작해도 토스 키가 없으면 web
+  web('secret-w1', kst(10, 13, 9), 'toss_fake');
+  store.logVisit('secret-w1', kst(10, 20, 9));
+
+  const m = store.metrics(now, { since, excludeUserIds: ['secret-tx'] });
+  assert.deepEqual(m.excluded, { total: 2, beforeSince: 1, byId: 1, since });
+  assert.equal(m.users, 5);
+  assert.equal(m.channels.toss.users, 4);
+  assert.equal(m.channels.web.users, 1);
+  assert.deepEqual(m.channels.toss.firstRound, { started: 4, finished: 2, completionPct: 50 });
+  assert.equal(m.channels.web.retention7d.returned, 1);
+
+  const [w1, w2] = m.channels.toss.cohorts;
+  assert.equal(m.channels.toss.cohorts.length, 2);
+  assert.equal(w1.week, '2026-10-12');
+  assert.equal(w1.signups, 3);
+  assert.deepEqual(w1.firstRound7d, { started: 2, finished: 2, pct: 100, mature: true });
+  assert.deepEqual(w1.d1, { eligible: 3, returned: 1, pct: 33.3, mature: true });
+  assert.deepEqual(w1.d7, { eligible: 3, returned: 1, pct: 33.3, mature: true });
+  assert.equal(w1.smallSample, true);
+  assert.equal(w2.week, '2026-10-26');
+  assert.equal(w2.firstRound7d.mature, false);
+  assert.equal(w2.d1.eligible, 0);
+  assert.equal(w2.d7.mature, false);
+
+  assert.deepEqual(m.channels.toss.last7Days, { signups: 1, activeUsers: 2, finishedRounds: 0, roundsPerActiveUser: 0 });
+
+  const md = toMarkdown(m, 'node server/src/metrics.ts --markdown');
+  assert.match(md, /제외한 회원 수 2명/);
+  assert.match(md, /\| 2026-10-12 \| 3 \| 2 \| 100% \(2\/2\) \| 33\.3% \(1\/3\) \| 33\.3% \(1\/3\) \| 표본 부족 \|/);
+  assert.match(md, /\| 2026-10-26 \| 1 \| 1 \| 0% \(0\/1\) 미성숙 \| 미성숙 \| 미성숙 \| 표본 부족 \|/);
+  assert.doesNotMatch(md, /secret|toss_fake|key-/, '개인정보(ID·아이디·토스 키)는 출력하지 않는다');
+  store.close();
+});

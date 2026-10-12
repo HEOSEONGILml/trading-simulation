@@ -108,6 +108,7 @@ export function buildApp(options: {
 
   // ---------- 회원 ----------
 
+  // 방문(visit)은 /api/auth/me, /api/auth/login, /api/auth/toss 에서 회원별 하루 1회 기록한다 (docs/metrics.md)
   app.get('/api/auth/me', async (req) => {
     if (req.user) store.logVisit(req.user.id);
     return { user: req.user ? publicUser(req.user) : null };
@@ -124,6 +125,7 @@ export function buildApp(options: {
   app.post<{ Body: { username?: unknown; password?: unknown } }>('/api/auth/login', async (req, reply) => {
     limiter.check(clientIp(req));
     const user = await logIn(store, req.body?.username, req.body?.password);
+    store.logVisit(user.id);
     setSessionCookie(req, reply, user.id);
     return { user: publicUser(user) };
   });
@@ -133,6 +135,8 @@ export function buildApp(options: {
     limiter.check(clientIp(req));
     const { user, created } = tossLogin(store, req.body?.anonymousKey);
     if (created) store.logEvent(user.id, 'signup', user.createdAt);
+    // 재방문 측정: 토큰이 없거나 만료돼 다시 로그인한 날도 방문으로 센다 (하루 1회)
+    store.logVisit(user.id);
     const { token, expiresAt } = createSession(store, user.id);
     return { user: publicUser(user), token, expiresAt };
   });

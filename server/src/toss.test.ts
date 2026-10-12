@@ -97,3 +97,42 @@ test('CORS: 토스 미니앱 출처만 허용 (appName 변경 가능)', async ()
   assert.equal(old.headers['access-control-allow-origin'], undefined);
   await renamed.close();
 });
+
+test('재방문 측정: /api/auth/toss·/api/auth/login 에서도 방문을 하루 1회 기록한다', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { DatabaseSync } = await import('node:sqlite');
+  const dir = mkdtempSync(join(tmpdir(), 'bc-visit-'));
+  const dbPath = join(dir, 'test.db');
+  const app = buildApp({ dbPath });
+  const reader = new DatabaseSync(dbPath);
+  const visits = (userId: string) =>
+    (reader.prepare("SELECT COUNT(*) AS n FROM events WHERE user_id = ? AND type = 'visit'").get(userId) as { n: number }).n;
+  try {
+    // 토스: 첫 로그인(가입)에 1건, 같은 날 재로그인은 추가 없음
+    const first = (await app.inject({ method: 'POST', url: '/api/auth/toss', payload: { anonymousKey: KEY } })).json();
+    assert.equal(visits(first.user.id), 1);
+    const again = (await app.inject({ method: 'POST', url: '/api/auth/toss', payload: { anonymousKey: KEY } })).json();
+    assert.equal(again.user.id, first.user.id);
+    assert.equal(visits(first.user.id), 1);
+
+    // 웹: 가입만으로는 방문이 아니고, 로그인하면 1건, 같은 날 두 번째 로그인은 추가 없음
+    const signup = await app.inject({ method: 'POST', url: '/api/auth/signup', payload: { username: 'webuser1', password: 'password123' } });
+    const webId = signup.json().user.id;
+    assert.equal(visits(webId), 0);
+    for (let i = 0; i < 2; i++) {
+      const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: 'webuser1', password: 'password123' } });
+      assert.equal(login.statusCode, 200, login.body);
+      assert.equal(visits(webId), 1);
+    }
+
+    // 로그인 실패는 기록하지 않는다
+    await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: 'webuser1', password: 'wrong-password' } });
+    assert.equal(visits(webId), 1);
+  } finally {
+    reader.close();
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

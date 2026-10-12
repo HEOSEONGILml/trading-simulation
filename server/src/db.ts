@@ -225,48 +225,48 @@ export class Store {
     if (!seen) this.logEvent(userId, 'visit', at);
   }
 
-  /** 검증 지표 (PLAN.md 4장) */
-  metrics(now = Date.now()) {
-    const users = this.db.prepare('SELECT id, created_at FROM users').all() as { id: string; created_at: number }[];
-    const events = this.db.prepare('SELECT user_id, type, at FROM events').all() as {
+  /**
+   * 검증 지표 (PLAN.md 4장, 정의는 docs/metrics.md)
+   * - since: 이 시각 이전에 가입한 회원은 뺀다 (출시 전·내부 계정)
+   * - excludeUserIds: 기준 시각 뒤에 생긴 회사 테스트 계정 (운영 값은 실행 시 환경 변수로만 넘긴다)
+   * 채널은 토스 익명 키가 있으면 toss, 없으면 web 이다
+   */
+  metrics(now = Date.now(), options: MetricsOptions = {}) {
+    const all = this.db.prepare('SELECT id, created_at, toss_key IS NOT NULL AS toss FROM users').all() as {
+      id: string;
+      created_at: number;
+      toss: number;
+    }[];
+    const since = options.since ?? 0;
+    const excludeIds = new Set(options.excludeUserIds ?? []);
+    const beforeSince = all.filter((u) => u.created_at < since).length;
+    const byId = all.filter((u) => u.created_at >= since && excludeIds.has(u.id)).length;
+    const users: MetricUser[] = all
+      .filter((u) => u.created_at >= since && !excludeIds.has(u.id))
+      .map((u) => ({ id: u.id, createdAt: u.created_at, channel: u.toss ? 'toss' : 'web' }));
+
+    const included = new Set(users.map((u) => u.id));
+    const events = (this.db.prepare('SELECT user_id, type, at FROM events').all() as {
       user_id: string;
       type: EventType;
       at: number;
-    }[];
+    }[]).filter((e) => included.has(e.user_id));
     const byUser = new Map<string, { type: EventType; at: number }[]>();
     for (const e of events) {
       const list = byUser.get(e.user_id) ?? [];
       list.push(e);
       byUser.set(e.user_id, list);
     }
-    const has = (userId: string, type: EventType) => (byUser.get(userId) ?? []).some((e) => e.type === type);
-    const pct = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : null);
 
-    // 첫 판 완료율: 라운드를 시작해본 회원 중 한 판이라도 끝까지 마친 비율
-    const starters = users.filter((u) => has(u.id, 'round_start'));
-    const finishers = starters.filter((u) => has(u.id, 'round_finish'));
-
-    // 7일 재방문율: 가입 후 8일이 지난 회원 중 가입 다음 날부터 7일 안에 다시 활동한 비율
-    const matured = users.filter((u) => u.created_at <= now - 8 * DAY);
-    const returned = matured.filter((u) => {
-      const from = kstDayStart(u.created_at) + DAY;
-      return (byUser.get(u.id) ?? []).some((e) => e.at >= from && e.at < from + 7 * DAY);
-    });
-
-    const weekAgo = now - 7 * DAY;
-    const activeUsers = new Set(events.filter((e) => e.at >= weekAgo).map((e) => e.user_id)).size;
-    const finishedRounds = events.filter((e) => e.type === 'round_finish' && e.at >= weekAgo).length;
-
+    const forChannel = (channel?: MetricChannel) => {
+      const list = channel ? users.filter((u) => u.channel === channel) : users;
+      return channelMetrics(list, byUser, now);
+    };
     return {
-      users: users.length,
-      firstRound: { started: starters.length, finished: finishers.length, completionPct: pct(finishers.length, starters.length) },
-      retention7d: { cohort: matured.length, returned: returned.length, pct: pct(returned.length, matured.length) },
-      last7Days: {
-        signups: users.filter((u) => u.created_at >= weekAgo).length,
-        activeUsers,
-        finishedRounds,
-        roundsPerActiveUser: activeUsers ? Math.round((finishedRounds / activeUsers) * 10) / 10 : null,
-      },
+      generatedAt: now,
+      excluded: { total: beforeSince + byId, beforeSince, byId, since: options.since ?? null },
+      ...forChannel(),
+      channels: { toss: forChannel('toss'), web: forChannel('web') },
     };
   }
 
@@ -526,5 +526,105 @@ export function summarize(records: RoundRecord[]) {
     totalMinutes: sum((r) => r.candleCount),
     totalProfitMinutes: sum((r) => r.profitMinutes ?? 0),
     totalLossMinutes: sum((r) => r.lossMinutes ?? 0),
+  };
+}
+
+// ---------- 검증 지표 계산 ----------
+
+export type MetricChannel = 'toss' | 'web';
+export interface MetricsOptions {
+  since?: number;
+  excludeUserIds?: string[];
+}
+interface MetricUser {
+  id: string;
+  createdAt: number;
+  channel: MetricChannel;
+}
+
+/** 표본이 이보다 적으면 판정을 보류한다 [가정] */
+export const MIN_SAMPLE = 30;
+/** 재방문으로 세는 행동. 전날 시작한 판을 자정 넘어 끝낸 round_finish 는 세지 않는다 */
+const RETURN_TYPES: EventType[] = ['visit', 'round_start'];
+
+const pct = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : null);
+
+/** at이 속한 한국 시간 주(월요일 시작)의 월요일 0시 (UTC 밀리초) */
+export function kstWeekStart(at: number): number {
+  const day = kstDayStart(at);
+  const dow = new Date(day + KST_OFFSET).getUTCDay(); // 0=일
+  return day - ((dow + 6) % 7) * DAY;
+}
+
+export function kstDate(at: number): string {
+  return new Date(at + KST_OFFSET).toISOString().slice(0, 10);
+}
+
+function channelMetrics(users: MetricUser[], byUser: Map<string, { type: EventType; at: number }[]>, now: number) {
+  const eventsOf = (id: string) => byUser.get(id) ?? [];
+  const has = (id: string, type: EventType, from = -Infinity, to = Infinity) =>
+    eventsOf(id).some((e) => e.type === type && e.at >= from && e.at < to);
+  /** 가입한 한국 날짜 다음 날부터 days일 안에 visit·round_start 가 있는가 */
+  const returnedWithin = (u: MetricUser, days: number) => {
+    const from = kstDayStart(u.createdAt) + DAY;
+    return eventsOf(u.id).some((e) => RETURN_TYPES.includes(e.type) && e.at >= from && e.at < from + days * DAY);
+  };
+  /** 판정 기간이 끝난 회원만 분모에 넣는다 */
+  const retention = (list: MetricUser[], days: number) => {
+    const eligible = list.filter((u) => kstDayStart(u.createdAt) + (1 + days) * DAY <= now);
+    const returned = eligible.filter((u) => returnedWithin(u, days));
+    return { eligible: eligible.length, returned: returned.length, pct: pct(returned.length, eligible.length), mature: eligible.length === list.length && list.length > 0 };
+  };
+  /** 가입 후 7일 안 첫 판: 분모 = 그 기간에 판을 시작한 회원, 분자 = 그중 그 기간에 한 판을 끝낸 회원 */
+  const firstRound7d = (list: MetricUser[]) => {
+    const eligible = list.filter((u) => u.createdAt + 7 * DAY <= now);
+    const started = list.filter((u) => has(u.id, 'round_start', u.createdAt, u.createdAt + 7 * DAY));
+    const finished = started.filter((u) => has(u.id, 'round_finish', u.createdAt, u.createdAt + 7 * DAY));
+    return {
+      started: started.length,
+      finished: finished.length,
+      pct: pct(finished.length, started.length),
+      mature: eligible.length === list.length && list.length > 0,
+    };
+  };
+
+  // 누적 첫 판 완료율 (PLAN.md 4장 판단용): 판을 시작해 본 회원 중 언제든 한 판이라도 끝낸 비율
+  const starters = users.filter((u) => has(u.id, 'round_start'));
+  const finishers = starters.filter((u) => has(u.id, 'round_finish'));
+
+  const weeks = new Map<number, MetricUser[]>();
+  for (const u of users) {
+    const w = kstWeekStart(u.createdAt);
+    weeks.set(w, [...(weeks.get(w) ?? []), u]);
+  }
+  const cohorts = [...weeks.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([week, list]) => ({
+      week: kstDate(week),
+      signups: list.length,
+      firstRound7d: firstRound7d(list),
+      d1: retention(list, 1),
+      d7: retention(list, 7),
+      smallSample: list.length < MIN_SAMPLE,
+    }));
+
+  const weekAgo = now - 7 * DAY;
+  const recent = users.flatMap((u) => eventsOf(u.id).filter((e) => e.at >= weekAgo).map((e) => ({ ...e, id: u.id })));
+  const activeUsers = new Set(recent.map((e) => e.id)).size;
+  const finishedRounds = recent.filter((e) => e.type === 'round_finish').length;
+  const d7 = retention(users, 7);
+
+  return {
+    users: users.length,
+    firstRound: { started: starters.length, finished: finishers.length, completionPct: pct(finishers.length, starters.length) },
+    retention7d: { cohort: d7.eligible, returned: d7.returned, pct: d7.pct },
+    retentionD1: retention(users, 1),
+    last7Days: {
+      signups: users.filter((u) => u.createdAt >= weekAgo).length,
+      activeUsers,
+      finishedRounds,
+      roundsPerActiveUser: activeUsers ? Math.round((finishedRounds / activeUsers) * 10) / 10 : null,
+    },
+    cohorts,
   };
 }
