@@ -31,7 +31,8 @@ function SimClock({ game }: { game: Game }) {
   );
 }
 
-export type Page = 'trade' | 'history' | 'ranking';
+/** account(내 정보)는 미니앱 탭바에만 있다. 웹은 헤더의 사용자 메뉴를 쓴다 */
+export type Page = 'trade' | 'history' | 'ranking' | 'account';
 
 export interface HeaderProps {
   game: Game;

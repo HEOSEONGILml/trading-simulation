@@ -75,6 +75,10 @@ export function MobileHeader(props: HeaderProps) {
   const inRound = ex && phase !== 'setup' && phase !== 'loading';
   const roundReturn = ex ? (ex.equity() / ex.rules.initialBalance - 1) * 100 : 0;
 
+  // 미니앱: 상단은 토스 내비게이션 바가 맡는다. 자체 헤더·뒤로가기·메뉴를 두지 않고,
+  // 화면 이동과 계정 기능은 하단 탭바(MiniappTabBar)로 한다. 트레이딩 화면에는 라운드 조작 줄만 남긴다
+  if (MINIAPP && page !== 'trade') return null;
+
   if (page !== 'trade') {
     return (
       <header className="m-header">
@@ -91,7 +95,7 @@ export function MobileHeader(props: HeaderProps) {
   }
 
   return (
-    <header className="m-header">
+    <header className={`m-header${MINIAPP ? ' m-header-miniapp' : ''}`}>
       <div className="m-row">
         <div className="m-symbol">
           <span className="symbol-name">{game.info.symbol}</span>
@@ -102,7 +106,7 @@ export function MobileHeader(props: HeaderProps) {
         )}
         <div className="header-spacer" />
         {inRound && <span className={`m-return mono ${pnlClass(roundReturn)}`}>{formatSigned(roundReturn)}%</span>}
-        {menu}
+        {!MINIAPP && menu}
       </div>
       {inRound && (
         <div className="m-row">

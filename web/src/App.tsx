@@ -6,6 +6,8 @@ import { AuthScreen } from './components/AuthScreen.tsx';
 import { Header, type Page } from './components/Header.tsx';
 import { NicknameDialog } from './components/NicknameDialog.tsx';
 import { RankingPage } from './components/RankingPage.tsx';
+import { AccountPage } from './components/mobile/AccountPage.tsx';
+import { MiniappTabBar } from './components/mobile/MiniappTabBar.tsx';
 import { MobileHeader } from './components/mobile/MobileHeader.tsx';
 import { MobileTrade } from './components/mobile/MobileTrade.tsx';
 import { HistoryPage } from './components/HistoryPage.tsx';
@@ -14,7 +16,8 @@ import { ResultDialog } from './components/ResultDialog.tsx';
 import { SetupDialog } from './components/SetupDialog.tsx';
 import { MINIAPP } from './env.ts';
 import { Game } from './game/game.ts';
-import { miniappLogin } from './miniapp.ts';
+import { miniappLogin, onTossBack } from './miniapp.ts';
+import { backTarget } from './miniappNav.ts';
 import { useIsMobile } from './useIsMobile.ts';
 import type { Market } from './market.ts';
 import { loadPrefs, savePrefs, type Prefs, type SetupSettings, type ViewSettings } from './settings.ts';
@@ -124,7 +127,8 @@ function Trainer({ user, initialPrefs, onChangeNickname, onLogout }: TrainerProp
   const [resultOpen, setResultOpen] = useState(false);
   // 서버가 라운드를 열 수 있는 시장 (불러오기 전과 실패 때는 코인만)
   const [available, setAvailable] = useState<Market[]>(['coin']);
-  const mobile = useIsMobile();
+  // 미니앱은 토스 앱(휴대폰) 안에서만 열리므로 항상 모바일 화면을 쓴다
+  const mobile = useIsMobile() || MINIAPP;
 
   const updatePrefs = (change: Partial<Prefs>) => {
     setPrefs((prev) => {
@@ -150,6 +154,15 @@ function Trainer({ user, initialPrefs, onChangeNickname, onLogout }: TrainerProp
       game.dispose();
     };
   }, [game]);
+
+  // 미니앱: 자체 뒤로가기 버튼 대신 토스 내비게이션 바의 뒤로가기로 최초 화면(트레이딩)에 돌아간다.
+  // 최초 화면에서는 가로채지 않아 토스 기본 동작(미니앱 종료)이 그대로 된다
+  useEffect(() => {
+    if (!MINIAPP) return;
+    const target = backTarget(page);
+    if (!target) return;
+    return onTossBack(() => setPage(target));
+  }, [page]);
 
   useEffect(() => {
     if (game.phase === 'finished') setResultOpen(true);
@@ -207,7 +220,7 @@ function Trainer({ user, initialPrefs, onChangeNickname, onLogout }: TrainerProp
   };
 
   return (
-    <div className={`app ${mobile ? 'mobile' : 'desktop'}`}>
+    <div className={`app ${mobile ? 'mobile' : 'desktop'}${MINIAPP ? ' miniapp' : ''}`}>
       {mobile ? <MobileHeader {...headerProps} /> : <Header {...headerProps} />}
 
       {mobile ? (
@@ -223,6 +236,8 @@ function Trainer({ user, initialPrefs, onChangeNickname, onLogout }: TrainerProp
       )}
       {page === 'history' && <HistoryPage mobile={mobile} />}
       {page === 'ranking' && <RankingPage mobile={mobile} />}
+      {MINIAPP && page === 'account' && <AccountPage user={user} onChangeNickname={onChangeNickname} />}
+      {MINIAPP && <MiniappTabBar page={page} onPageChange={setPage} />}
 
       {page === 'trade' && showSetup && (
         <SetupDialog

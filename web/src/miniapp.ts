@@ -15,6 +15,25 @@ export function initMiniapp() {
     .catch(() => {});
 }
 
+/**
+ * 토스 뒤로가기(내비게이션 바 뒤로가기·안드로이드 백버튼)를 가로챈다. 반환 함수로 해제한다.
+ * 리스너가 있는 동안은 토스 기본 동작(미니앱 종료)이 막히므로, 최초 화면이 아닐 때만 등록한다.
+ */
+export function onTossBack(handler: () => void): () => void {
+  let unsubscribe: (() => void) | null = null;
+  let cancelled = false;
+  void import('@apps-in-toss/web-framework')
+    .then(({ graniteEvent }) => {
+      if (cancelled) return;
+      unsubscribe = graniteEvent.addEventListener('backEvent', { onEvent: handler, onError: () => {} });
+    })
+    .catch(() => {});
+  return () => {
+    cancelled = true;
+    unsubscribe?.();
+  };
+}
+
 /** 토스 익명 사용자 키로 회원 자동 생성·로그인. 가입·로그인 화면은 없다 */
 export async function miniappLogin(): Promise<User> {
   const { User: TossUser } = await import('@apps-in-toss/web-framework');
