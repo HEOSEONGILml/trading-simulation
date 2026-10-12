@@ -27,6 +27,9 @@
 ## 운영 지표 (매주 기록)
 
 - **각 미션 단계를 시작할 때 `bash deploy/metrics.sh` 를 실행**해 운영 지표를 `docs/metrics.md` 끝에 붙이고 커밋한다. 직전 기록 뒤 7일이 넘었으면 다른 일보다 먼저 기록한다.
+- **주간 자동 스냅샷 (cron)**: 매주 월요일 10:00 KST(01:00 UTC)에 서버 crontab(`crontab -l` 로 확인)이 `bash deploy/metrics.sh --print` 를 실행해 결과를 `/home/ubuntu/BusinessFactory/company/missions/M002/metrics/<날짜>.md` 에 저장한다. 실패하면 파일 이름이 `<날짜>.FAILED.md` 로 바뀐다(내용은 오류 출력).
+  - cron 은 worktree 가 아니라 **원래 작업 공간** `/home/ubuntu/BusinessFactory/workspaces/blindcandle` 의 `deploy/metrics.sh` 와 `deploy/.env` 를 쓴다. 이 경로·브랜치(feature/business)가 바뀌거나 스크립트가 깨지면 조용히 실패할 수 있으니 바꿀 때 crontab 도 함께 고친다.
+  - **단계를 시작할 때** 그 폴더에 쌓인 스냅샷(직전 기록 이후 것)을 `docs/metrics.md` '기록' 절 끝에 옮겨 커밋한다. `.FAILED.md` 가 있으면 원인을 확인하고 `bash deploy/metrics.sh` 로 다시 기록한다.
 - 기록은 집계값만 남는다(회원 ID·닉네임·토스 키 금지). 정의·제외 기준은 `docs/metrics.md` 정의 절을 따른다.
 - 기준 시각 뒤에 생긴 회사 테스트 계정은 `deploy/.env` 의 `METRICS_EXCLUDE_USER_IDS` 에만 넣는다.
 

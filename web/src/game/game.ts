@@ -1,5 +1,6 @@
 // 라운드 진행 컨트롤러: 데이터 수신, 재생 타이머, 거래소 연결
 
+import { logEvent, roundOutcome } from '../analytics.ts';
 import { api, type RoundRecord, type RoundSettings, type RoundStart } from '../api.ts';
 import { marketInfo } from '../market.ts';
 import { Exchange, ExchangeError, type ExchangeSnapshot, type OrderOptions } from '../engine/exchange.ts';
@@ -129,7 +130,10 @@ export class Game {
     try {
       const round = await api.createRound(settings);
       if (token !== this.loadToken) return;
-      this.load('ready', round, settings, this.newExchange(round), [], [], false);
+      const exchange = this.newExchange(round);
+      this.load('ready', round, settings, exchange, [], [], false);
+      // 서버가 라운드를 만든 직후 roundId당 1회 (서버 round_start 이벤트와 같은 시점). 일시정지 해제·이어하기에서는 남기지 않는다
+      logEvent('round_start', { leverage: exchange.leverage });
     } catch (err) {
       if (token !== this.loadToken) return;
       this.phase = 'setup';
@@ -283,6 +287,10 @@ export class Game {
       const res = await api.finishRound(round.roundId, { ...summary, trades });
       result.saved = res.saved;
       result.record = res.record;
+      // 서버에 기록된 판만 센다 (서버 round_finish 이벤트와 같은 기준)
+      if (res.saved) {
+        logEvent('round_finish', { leverage: ex.leverage, outcome: roundOutcome(summary), trade_count: summary.tradeCount });
+      }
     } catch (err) {
       result.error = (err as Error).message;
     }
