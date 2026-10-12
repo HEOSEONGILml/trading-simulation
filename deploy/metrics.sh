@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 source deploy/.env
 KEY="${SSH_KEY:-$HOME/.ssh/trading_sim_deploy}"
 
-# 측정 기준 시각: visit 기록 보강(T0112) 운영 배포 시각. 이전 가입자는 출시 당일 내부·테스트 계정으로 본다 (docs/metrics.md 정의)
+# 측정 기준 시각: visit 기록 보강(T0112) 운영 배포일 2026-10-12 0시(KST). 이전 가입자는 출시 전 내부·테스트 계정으로 본다 (docs/metrics.md 정의)
 LAUNCH_SINCE="2026-10-12T00:00:00+09:00"
 SINCE="${METRICS_SINCE:-$LAUNCH_SINCE}"
 EXCLUDE="${METRICS_EXCLUDE_USER_IDS:-}"
