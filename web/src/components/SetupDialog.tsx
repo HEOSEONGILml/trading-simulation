@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { RoundSettings } from '../api.ts';
+import { MINIAPP } from '../env.ts';
 import { MARKETS, MARKET_INFO, type Market } from '../market.ts';
 import { SPEEDS, fitSetup, type SetupSettings } from '../settings.ts';
 
@@ -55,10 +56,22 @@ export function SetupDialog({ initial, speed: initialSpeed, available, loading, 
           )}
         </div>
         <div className="modal-body">
+          {MINIAPP && (
+            <div className="form-row how-to">
+              <label>게임 방법</label>
+              <ol className="how-to-steps">
+                <li>언제인지 모르는 과거 차트가 한 캔들씩 이어집니다.</li>
+                <li>가상의 자금으로 사고팔며 흐름을 읽어 보세요.</li>
+                <li>라운드가 끝나면 실제 날짜와 내 수익률이 공개됩니다.</li>
+              </ol>
+              <p className="hint">실제 돈이나 주문은 쓰이지 않는 모의 연습입니다.</p>
+            </div>
+          )}
           <div className="form-row">
             <label>섹션</label>
             <div className="chips market-chips">
-              {MARKETS.map((m) => {
+              {/* 미니앱은 아직 열지 않은 섹션("준비 중")을 보여주지 않는다 */}
+              {(MINIAPP ? MARKETS.filter((m) => available.includes(m)) : MARKETS).map((m) => {
                 const ready = available.includes(m);
                 return (
                   <button
