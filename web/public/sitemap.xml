@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://blindcandle.com/</loc></url>
+  <url><loc>https://blindcandle.com/guide/</loc></url>
+  <url><loc>https://blindcandle.com/guide/coin-futures-mock-trading.html</loc></url>
+  <url><loc>https://blindcandle.com/guide/long-short-leverage.html</loc></url>
+  <url><loc>https://blindcandle.com/guide/chart-practice.html</loc></url>
   <url><loc>https://blindcandle.com/terms.html</loc></url>
   <url><loc>https://blindcandle.com/privacy.html</loc></url>
 </urlset>

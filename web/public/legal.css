@@ -58,3 +58,36 @@ th {
   border-left: 3px solid var(--yellow);
   border-radius: 4px;
 }
+
+/* 검색용 안내 페이지(/guide/) */
+.crumb {
+  color: var(--text-2);
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+.cta {
+  display: inline-block;
+  margin: 8px 0;
+  padding: 10px 18px;
+  background: var(--yellow);
+  color: #0b0e11;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 6px;
+}
+.related {
+  margin-top: 40px;
+  padding: 16px;
+  background: var(--panel);
+  border-radius: 6px;
+}
+.related h2 {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+footer {
+  margin-top: 32px;
+  color: var(--text-2);
+  font-size: 13px;
+}
